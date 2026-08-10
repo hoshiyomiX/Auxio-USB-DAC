@@ -37,6 +37,8 @@ import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.audio.MediaCodecAudioRenderer
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.source.MediaSource
+import com.decent.usbaudio.media3.UsbAudioSink
+import com.decent.usbaudio.media3.UsbAudioSinkConfig
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import kotlin.math.abs
@@ -76,6 +78,7 @@ class ExoPlaybackStateHolder(
     private val replayGainProcessor: ReplayGainAudioProcessor,
     private val musicRepository: MusicRepository,
     private val imageSettings: ImageSettings,
+    private val usbSink: UsbAudioSink? = null,
 ) :
     PlaybackStateHolder,
     Player.Listener,
@@ -108,6 +111,7 @@ class ExoPlaybackStateHolder(
         replayGainProcessor.release()
         imageSettings.unregisterListener(this)
         playbackSettings.unregisterListener(this)
+        usbSink?.detachFromPlayer()
         player.release()
     }
 
@@ -656,36 +660,70 @@ class ExoPlaybackStateHolder(
     ) {
         fun create(): ExoPlaybackStateHolder {
             // Since Auxio is a music player, only specify an audio renderer to save
-            // battery/apk size/cache size]
+            // battery/apk size/cache size
+
+            // Build the base DefaultAudioSink with ReplayGain processor
+            val baseAudioSink = DefaultAudioSink.Builder(context)
+                .setAudioProcessors(arrayOf(replayGainProcessor))
+                .build()
+
+            // If USB DAC bit-perfect mode is enabled, wrap with UsbAudioSink
+            // which sends PCM directly to the USB DAC via isochronous transfers,
+            // bypassing the entire Android audio stack.
+            val usbSink = if (playbackSettings.usbDacMode) {
+                UsbAudioSink(baseAudioSink, context, UsbAudioSinkConfig(
+                    bitPerfectEnabled = true,
+                    forceRouteToSpeaker = true
+                ))
+            } else {
+                null
+            }
+
             val audioRenderer = RenderersFactory { handler, _, audioListener, _, _ ->
                 arrayOf<BaseRenderer>(
-                    FfmpegAudioRenderer(handler, audioListener, replayGainProcessor),
+                    // FFmpeg renderer: pass AudioSink so USB DAC mode works for all formats
+                    // (MP3, AAC, OGG, etc. decoded by FFmpeg, not just MediaCodec-decoded formats)
+                    FfmpegAudioRenderer(handler, audioListener, usbSink ?: baseAudioSink),
                     MediaCodecAudioRenderer(
                         context,
                         MediaCodecSelector.DEFAULT,
                         handler,
                         audioListener,
-                        DefaultAudioSink.Builder(context)
-                            .setAudioProcessors(arrayOf(replayGainProcessor))
-                            .build(),
+                        usbSink ?: baseAudioSink,
                     ),
                 )
             }
 
-            val exoPlayer =
-                ExoPlayer.Builder(context, audioRenderer)
-                    .setMediaSourceFactory(mediaSourceFactory)
-                    // Enable automatic WakeLock support
-                    .setWakeMode(C.WAKE_MODE_LOCAL)
-                    .setAudioAttributes(
-                        // Signal that we are a music player.
-                        AudioAttributes.Builder()
-                            .setUsage(C.USAGE_MEDIA)
-                            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                            .build(),
-                        true,
-                    )
-                    .build()
+            // Wrap LoadControl to prevent ExoPlayer I/O contention when native engine is active
+            val loadControl = if (usbSink != null) {
+                UsbAudioSink.wrapLoadControl(
+                    androidx.media3.exoplayer.DefaultLoadControl.Builder().build()
+                ) { usbSink.isNativeEngineActive }
+            } else {
+                null
+            }
+
+            val exoBuilder = ExoPlayer.Builder(context, audioRenderer)
+                .setMediaSourceFactory(mediaSourceFactory)
+                // Enable automatic WakeLock support
+                .setWakeMode(C.WAKE_MODE_LOCAL)
+                .setAudioAttributes(
+                    // Signal that we are a music player.
+                    AudioAttributes.Builder()
+                        .setUsage(C.USAGE_MEDIA)
+                        .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                        .build(),
+                    true,
+                )
+
+            if (loadControl != null) {
+                exoBuilder.setLoadControl(loadControl)
+            }
+
+            val exoPlayer = exoBuilder.build()
+
+            // Attach UsbAudioSink to the player for URI resolution and engine lifecycle
+            usbSink?.attachToPlayer(exoPlayer)
 
             return ExoPlaybackStateHolder(
                 context,
@@ -697,6 +735,7 @@ class ExoPlaybackStateHolder(
                 replayGainProcessor,
                 musicRepository,
                 imageSettings,
+                usbSink,
             )
         }
     }

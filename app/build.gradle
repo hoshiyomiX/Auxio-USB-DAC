@@ -154,6 +154,10 @@ dependencies {
     implementation project(":media-lib-exoplayer")
     implementation project(":media-lib-decoder-ffmpeg")
 
+    // decent-player USB Audio DAC (bit-perfect)
+    implementation project(":decent-usb-audio-wrapper-media3")
+    implementation project(":decent-media3-decoder-flac")
+
     // Image loading
     implementation 'io.coil-kt.coil3:coil-core:3.4.0'
 

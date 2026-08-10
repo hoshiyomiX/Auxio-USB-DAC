@@ -44,4 +44,14 @@
             app:title="@string/set_pre_amp" />
 
     </PreferenceCategory>
+
+    <PreferenceCategory android:title="@string/set_usb_dac">
+
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="@string/set_key_usb_dac_mode"
+            app:summary="@string/set_usb_dac_mode_desc"
+            app:title="@string/set_usb_dac_mode" />
+
+    </PreferenceCategory>
 </PreferenceScreen>

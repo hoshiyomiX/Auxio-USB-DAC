@@ -11,6 +11,13 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- USB DAC support (decent-player USB Audio Class 2.0 driver) -->
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
+
+    <!-- Allow decent-player USB libraries (minSdk 29) to merge into app (minSdk 24).
+         USB DAC functionality is runtime-guarded and only active on API 29+. -->
+    <uses-sdk tools:overrideLibrary="com.decent.usbaudio, com.decent.usbaudio.media3, com.decent.media3.decoder.flac" />
+
     <!-- Bluetooth auto-connect functionality (Disabled until permission workflow can be made) -->
 <!--    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />-->
 <!--    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" android:minSdkVersion="31" />-->
@@ -53,7 +60,6 @@
             android:windowSoftInputMode="adjustNothing">
 
             <intent-filter>
-                <!-- Expose that we are a music player. -->
                 <action android:name="android.intent.action.MAIN" />
                 <action android:name="android.intent.action.MUSIC_PLAYER" />
 
@@ -61,6 +67,14 @@
                 <category android:name="android.intent.category.LAUNCHER" />
                 <category android:name="android.intent.category.APP_MUSIC" />
             </intent-filter>
+
+            <!-- USB DAC: Auto-detect when a USB Audio Class device is connected -->
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
+                android:resource="@xml/usb_audio_device_filter" />
 
             <intent-filter>
                 <!--

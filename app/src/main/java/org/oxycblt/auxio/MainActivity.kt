@@ -19,6 +19,7 @@
 package org.oxycblt.auxio
 
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.view.View
 import androidx.activity.viewModels
@@ -26,9 +27,11 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.view.WindowCompat
 import androidx.core.view.updatePadding
+import com.decent.usbaudio.UsbAudioPermissionHelper
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import org.oxycblt.auxio.databinding.ActivityMainBinding
+import org.oxycblt.auxio.playback.PlaybackSettings
 import org.oxycblt.auxio.playback.PlaybackViewModel
 import org.oxycblt.auxio.playback.state.DeferredPlayback
 import org.oxycblt.auxio.ui.UISettings
@@ -54,6 +57,7 @@ import timber.log.Timber as L
 class MainActivity : AppCompatActivity() {
     private val playbackModel: PlaybackViewModel by viewModels()
     @Inject lateinit var uiSettings: UISettings
+    @Inject lateinit var playbackSettings: PlaybackSettings
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -63,6 +67,9 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
         setupEdgeToEdge(binding.root)
         L.d("Activity created")
+
+        // Handle USB DAC device attachment (claim before kernel driver)
+        handleUsbDeviceAttached(intent)
     }
 
     override fun onResume() {
@@ -82,7 +89,21 @@ class MainActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        // Handle USB DAC device attachment
+        handleUsbDeviceAttached(intent)
         startIntentAction(intent)
+    }
+
+    /**
+     * Handle USB_DEVICE_ATTACHED intent when a USB DAC is connected.
+     * Claims the device immediately to prevent the kernel snd-usb-audio driver
+     * from binding to it, enabling bit-perfect output via decent-player driver.
+     */
+    private fun handleUsbDeviceAttached(intent: Intent?) {
+        if (intent == null) return
+        if (!playbackSettings.usbDacMode) return  // Only handle if USB DAC mode enabled
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return  // Requires API 29+
+        UsbAudioPermissionHelper.handleIntent(this, intent)
     }
 
     private fun setupTheme() {

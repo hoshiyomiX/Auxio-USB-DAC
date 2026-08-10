@@ -14,6 +14,7 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        maven { url "https://jitpack.io" }  // For JSch fork (decent-player SFTP support)
     }
 }
 
@@ -24,3 +25,8 @@ apply from: file("media/core_settings.gradle")
 rootProject.name = "Auxio"
 include ':app'
 include ':musikr'
+
+// decent-player USB Audio libraries
+include ':decent-usb-audio-driver'
+include ':decent-usb-audio-wrapper-media3'
+include ':decent-media3-decoder-flac'

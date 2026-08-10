@@ -318,6 +318,11 @@
     <string name="set_pre_amp_without">Adjustment without tags</string>
     <string name="set_pre_amp_warning">Warning: Changing the pre-amp to a high positive value may result in peaking on some audio tracks.</string>
 
+    <!-- USB DAC / Bit-Perfect settings -->
+    <string name="set_usb_dac">USB DAC</string>
+    <string name="set_usb_dac_mode">USB DAC mode (Bit-Perfect)</string>
+    <string name="set_usb_dac_mode_desc">Bypass Android audio framework and send raw PCM directly to USB DAC via isochronous transfers. Requires Android 10+, a USB Audio Class 2.0 DAC, and app restart to take effect.</string>
+
     <string name="set_library">Library</string>
     <string name="set_locations">Music sources</string>
     <string name="set_locations_desc">Manage where music should be loaded from</string>

@@ -60,6 +60,8 @@ interface PlaybackSettings : Settings<PlaybackSettings.Listener> {
     val rememberPause: Boolean
     /** Whether to always exit when task is removed, even if playing. */
     val exitOnTaskRemoval: Boolean
+    /** Whether USB DAC bit-perfect mode is enabled (bypass Android audio stack). */
+    val usbDacMode: Boolean
 
     interface Listener {
         /** Called when one of the ReplayGain configurations have changed. */
@@ -70,6 +72,9 @@ interface PlaybackSettings : Settings<PlaybackSettings.Listener> {
 
         /** Called when [pauseOnRepeat] has changed. */
         fun onPauseOnRepeatChanged() {}
+
+        /** Called when [usbDacMode] has changed. */
+        fun onUsbDacModeChanged() {}
     }
 }
 
@@ -137,6 +142,9 @@ class PlaybackSettingsImpl @Inject constructor(@ApplicationContext context: Cont
     override val exitOnTaskRemoval: Boolean
         get() = sharedPreferences.getBoolean(getString(R.string.set_key_task_exit), false)
 
+    override val usbDacMode: Boolean
+        get() = sharedPreferences.getBoolean(getString(R.string.set_key_usb_dac_mode), false)
+
     override fun migrate() {
         // MusicMode was converted to PlaySong in 3.2.0
         fun Int.migrateMusicMode() =
@@ -200,6 +208,10 @@ class PlaybackSettingsImpl @Inject constructor(@ApplicationContext context: Cont
             getString(R.string.set_key_repeat_pause) -> {
                 L.d("Dispatching pause on repeat change")
                 listener.onPauseOnRepeatChanged()
+            }
+            getString(R.string.set_key_usb_dac_mode) -> {
+                L.d("Dispatching USB DAC mode change")
+                listener.onUsbDacModeChanged()
             }
         }
     }

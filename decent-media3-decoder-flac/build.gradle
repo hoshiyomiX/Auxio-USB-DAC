@@ -1,0 +1,44 @@
+plugins {
+    id "com.android.library"
+}
+
+android {
+    namespace "com.decent.media3.decoder.flac"
+    compileSdk target_sdk
+
+    defaultConfig {
+        minSdk 29
+        externalNativeBuild {
+            cmake {
+                arguments += ["-DWITH_OGG=OFF", "-DINSTALL_MANPAGES=OFF"]
+                targets += "flacJNI"
+            }
+        }
+    }
+
+    ndkVersion "29.0.14206865"
+
+    externalNativeBuild {
+        cmake {
+            path "src/main/jni/CMakeLists.txt"
+            version "3.21.0+"
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+}
+
+dependencies {
+    // Use Auxio's vendored Media3
+    implementation project(":media-lib-decoder")
+    implementation project(":media-lib-exoplayer")
+    implementation project(":media-lib-extractor")
+
+    implementation "androidx.annotation:annotation:1.9.1"
+    compileOnly "org.checkerframework:checker-qual:3.42.0"
+    compileOnly "com.google.errorprone:error_prone_annotations:2.28.0"
+    compileOnly "com.google.guava:guava:33.0.0-android"
+}
