@@ -135,7 +135,8 @@ data class AudioInfo(
          */
         private fun deriveDecoderInfo(song: Song, usbDacModeActive: Boolean): String {
             val codecName = formatSongFormat(song.format)
-            return if (usbDacModeActive) "Pending ($codecName)" else "ExoPlayer MediaCodec ($codecName)"
+            return if (usbDacModeActive) "Pending ($codecName)"
+            else "ExoPlayer MediaCodec ($codecName)"
         }
 
         /** Map a [Song]'s [Format] sealed type to a short display string for the overlay. */
