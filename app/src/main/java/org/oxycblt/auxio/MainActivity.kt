@@ -15,7 +15,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
- 
+
 package org.oxycblt.auxio
 
 import android.content.Intent
@@ -95,14 +95,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Handle USB_DEVICE_ATTACHED intent when a USB DAC is connected.
-     * Claims the device immediately to prevent the kernel snd-usb-audio driver
-     * from binding to it, enabling bit-perfect output via decent-player driver.
+     * Handle USB_DEVICE_ATTACHED intent when a USB DAC is connected. Claims the device immediately
+     * to prevent the kernel snd-usb-audio driver from binding to it, enabling bit-perfect output
+     * via decent-player driver.
      */
     private fun handleUsbDeviceAttached(intent: Intent?) {
         if (intent == null) return
-        if (!playbackSettings.usbDacMode) return  // Only handle if USB DAC mode enabled
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return  // Requires API 29+
+        if (!playbackSettings.usbDacMode) return // Only handle if USB DAC mode enabled
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return // Requires API 29+
         UsbAudioPermissionHelper.handleIntent(this, intent)
     }
 

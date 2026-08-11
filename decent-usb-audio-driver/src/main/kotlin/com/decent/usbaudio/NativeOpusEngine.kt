@@ -5,17 +5,15 @@ import android.util.Log
 /**
  * Native Ogg/Opus decode -> USB audio engine.
  *
- * Mirrors [NativeAudioEngine] (the FLAC engine) for Ogg/Opus files.
- * Bypasses the entire ExoPlayer audio pipeline for `.opus` and `.ogg` (with
- * Opus payload) files. A single native C++ thread handles:
- * Ogg page parsing -> Opus decode -> bit-depth padding -> USB isochronous
- * transfers. Zero JNI in the hot path.
+ * Mirrors [NativeAudioEngine] (the FLAC engine) for Ogg/Opus files. Bypasses the entire ExoPlayer
+ * audio pipeline for `.opus` and `.ogg` (with Opus payload) files. A single native C++ thread
+ * handles: Ogg page parsing -> Opus decode -> bit-depth padding -> USB isochronous transfers. Zero
+ * JNI in the hot path.
  *
- * Bit-perfect rationale: libopus natively outputs int16 PCM (Opus is a 16-bit
- * codec). No float conversion happens anywhere in this path. The only
- * conversion is int16 -> int32 (left-shift by 16, bit-exact) when the USB DAC
- * alt setting is 32-bit -- same lossless padding the FLAC engine uses for
- * 16-bit FLAC files.
+ * Bit-perfect rationale: libopus natively outputs int16 PCM (Opus is a 16-bit codec). No float
+ * conversion happens anywhere in this path. The only conversion is int16 -> int32 (left-shift by
+ * 16, bit-exact) when the USB DAC alt setting is 32-bit -- same lossless padding the FLAC engine
+ * uses for 16-bit FLAC files.
  *
  * Usage:
  * ```kotlin
@@ -34,34 +32,35 @@ import android.util.Log
  * @see NativeAudioEngine for the FLAC equivalent
  * @see UsbAudioStream for USB stream lifecycle management
  */
-class NativeOpusEngine {
+class NativeOpusEngine : NativeEngine {
 
     private var handle: Long = 0L
 
     /**
-     * True when libopus native library is available on this device.
-     * If false, [createFromFd] will always return false -- caller should
-     * fall back to the ExoPlayer + FFmpeg pipeline (NOT bit-perfect).
+     * True when libopus native library is available on this device. If false, [createFromFd] will
+     * always return false -- caller should fall back to the ExoPlayer + FFmpeg pipeline (NOT
+     * bit-perfect).
      */
     val isAvailable: Boolean = COMPANION_LOADED
 
     /** True when the engine has been created and not yet destroyed. */
-    val isCreated: Boolean get() = handle != 0L
+    override val isCreated: Boolean
+        get() = handle != 0L
 
     /** True when the decode thread is actively running. */
-    val isRunning: Boolean get() = handle != 0L && nativeIsRunning(handle)
+    override val isRunning: Boolean
+        get() = handle != 0L && nativeIsRunning(handle)
 
     /**
      * Create the engine from a file descriptor pointing to an Ogg/Opus file.
      *
-     * @param opusFd     File descriptor for the `.opus` or `.ogg` (Opus payload)
-     *                   file (will be dup'd internally).
-     * @param usbHandle  Native handle from [UsbAudioStream] (the USB output context).
-     * @return true if creation succeeded (OpusHead parsed, buffers allocated).
-     *         false if libopus is unavailable, the file is not a valid Ogg/Opus
-     *         stream, or buffer allocation failed.
+     * @param fd File descriptor for the `.opus` or `.ogg` (Opus payload) file (will be dup'd
+     *   internally).
+     * @param usbHandle Native handle from [UsbAudioStream] (the USB output context).
+     * @return true if creation succeeded (OpusHead parsed, buffers allocated). false if libopus is
+     *   unavailable, the file is not a valid Ogg/Opus stream, or buffer allocation failed.
      */
-    fun createFromFd(opusFd: Int, usbHandle: Long): Boolean {
+    override fun createFromFd(fd: Int, usbHandle: Long): Boolean {
         if (!isAvailable) {
             Log.w(TAG, "createFromFd: libopus native library not available")
             return false
@@ -70,15 +69,16 @@ class NativeOpusEngine {
             Log.w(TAG, "Engine already created, destroying first")
             destroy()
         }
-        handle = try {
-            nativeCreateFromFd(opusFd, usbHandle)
-        } catch (e: UnsatisfiedLinkError) {
-            // Build was performed without libopus (setup.sh not run) -- the
-            // .so loaded but the Opus JNI symbols are missing. Caller falls
-            // back to the FFmpeg pipeline.
-            Log.w(TAG, "Opus JNI symbols unavailable (build without libopus?): ${e.message}")
-            0L
-        }
+        handle =
+            try {
+                nativeCreateFromFd(fd, usbHandle)
+            } catch (e: UnsatisfiedLinkError) {
+                // Build was performed without libopus (setup.sh not run) -- the
+                // .so loaded but the Opus JNI symbols are missing. Caller falls
+                // back to the FFmpeg pipeline.
+                Log.w(TAG, "Opus JNI symbols unavailable (build without libopus?): ${e.message}")
+                0L
+            }
         if (handle == 0L) {
             Log.e(TAG, "Failed to create native Opus engine")
             return false
@@ -88,45 +88,44 @@ class NativeOpusEngine {
     }
 
     /** Start the decode thread. Audio flows immediately to USB. */
-    fun start(): Boolean {
+    override fun start(): Boolean {
         if (handle == 0L) return false
         return nativeStart(handle)
     }
 
     /** Pause the decode loop (thread stays alive, USB pipeline drains). */
-    fun pause() {
+    override fun pause() {
         if (handle != 0L) nativePause(handle)
     }
 
     /** Resume the decode loop after pause. */
-    fun resume() {
+    override fun resume() {
         if (handle != 0L) nativeResume(handle)
     }
 
     /**
      * Seek to a position in the Opus stream.
      *
-     * Uses linear scan from file start (O(N) in number of Ogg pages, ~100ms
-     * for a typical 4-minute song). Not as fast as FLAC's seek table, but
-     * correct and sufficient for interactive seeking.
+     * Uses linear scan from file start (O(N) in number of Ogg pages, ~100ms for a typical 4-minute
+     * song). Not as fast as FLAC's seek table, but correct and sufficient for interactive seeking.
      *
      * @param positionUs Target position in microseconds.
      * @return true if seek was accepted (async -- actual seek happens in decode thread).
      */
-    fun seek(positionUs: Long): Boolean {
+    override fun seek(positionUs: Long): Boolean {
         if (handle == 0L) return false
         return nativeSeek(handle, positionUs)
     }
 
     /** Stop the decode thread (blocks until thread exits). Thread-safe. */
     @Synchronized
-    fun stop() {
+    override fun stop() {
         if (handle != 0L) nativeStop(handle)
     }
 
     /** Destroy the engine and free all native resources. Thread-safe / idempotent. */
     @Synchronized
-    fun destroy() {
+    override fun destroy() {
         if (handle != 0L) {
             nativeDestroy(handle)
             handle = 0L
@@ -134,38 +133,45 @@ class NativeOpusEngine {
     }
 
     /** Current playback position in microseconds (from decoded samples). */
-    fun getPositionUs(): Long =
-        if (handle != 0L) nativeGetPositionUs(handle) else 0L
+    override fun getPositionUs(): Long = if (handle != 0L) nativeGetPositionUs(handle) else 0L
 
     /** Opus sample rate (always 48000 -- Opus is natively 48kHz). */
-    fun getSampleRate(): Int =
-        if (handle != 0L) nativeGetSampleRate(handle) else 0
+    override fun getSampleRate(): Int = if (handle != 0L) nativeGetSampleRate(handle) else 0
 
     /** Opus channel count (1 or 2). */
-    fun getChannels(): Int =
-        if (handle != 0L) nativeGetChannels(handle) else 0
+    override fun getChannels(): Int = if (handle != 0L) nativeGetChannels(handle) else 0
 
     /**
-     * Opus bits per sample (always 16 -- the Opus codec is 16-bit only).
-     * When the USB DAC is 32-bit, native code left-shifts int16 to int32
-     * (lossless bit-exact padding, same as the FLAC engine uses for 16-bit FLAC).
+     * Opus bits per sample (always 16 -- the Opus codec is 16-bit only). When the USB DAC is
+     * 32-bit, native code left-shifts int16 to int32 (lossless bit-exact padding, same as the FLAC
+     * engine uses for 16-bit FLAC).
      */
-    fun getBitsPerSample(): Int =
-        if (handle != 0L) nativeGetBitsPerSample(handle) else 0
+    override fun getBitsPerSample(): Int = if (handle != 0L) nativeGetBitsPerSample(handle) else 0
 
     // ── JNI declarations ───────────────────────────────────────────
 
     private external fun nativeCreateFromFd(fd: Int, usbHandle: Long): Long
+
     private external fun nativeStart(handle: Long): Boolean
+
     private external fun nativePause(handle: Long)
+
     private external fun nativeResume(handle: Long)
+
     private external fun nativeSeek(handle: Long, positionUs: Long): Boolean
+
     private external fun nativeStop(handle: Long)
+
     private external fun nativeDestroy(handle: Long)
+
     private external fun nativeGetPositionUs(handle: Long): Long
+
     private external fun nativeGetSampleRate(handle: Long): Int
+
     private external fun nativeGetChannels(handle: Long): Int
+
     private external fun nativeGetBitsPerSample(handle: Long): Int
+
     private external fun nativeIsRunning(handle: Long): Boolean
 
     companion object {
@@ -174,23 +180,22 @@ class NativeOpusEngine {
         /**
          * True if the shared library (libdecent_usb_audio.so) was loaded.
          *
-         * The .so is shared with NativeAudioEngine (the FLAC engine) and is
-         * already loaded by its companion init in most cases. loadLibrary is
-         * idempotent so we call it again for safety.
+         * The .so is shared with NativeAudioEngine (the FLAC engine) and is already loaded by its
+         * companion init in most cases. loadLibrary is idempotent so we call it again for safety.
          *
-         * Note: this flag does NOT verify that the Opus JNI symbols are
-         * present (libopus might not have been built in if setup.sh was not
-         * run before gradle build). The actual symbol-availability check
-         * happens lazily in [createFromFd] via try/catch on
-         * UnsatisfiedLinkError. If libopus was not built in, createFromFd
-         * returns false and the caller falls back to the FFmpeg pipeline.
+         * Note: this flag does NOT verify that the Opus JNI symbols are present (libopus might not
+         * have been built in if setup.sh was not run before gradle build). The actual
+         * symbol-availability check happens lazily in [createFromFd] via try/catch on
+         * UnsatisfiedLinkError. If libopus was not built in, createFromFd returns false and the
+         * caller falls back to the FFmpeg pipeline.
          */
-        private val COMPANION_LOADED: Boolean = try {
-            System.loadLibrary("decent_usb_audio")
-            true
-        } catch (e: UnsatisfiedLinkError) {
-            Log.w(TAG, "Native library unavailable: ${e.message}")
-            false
-        }
+        private val COMPANION_LOADED: Boolean =
+            try {
+                System.loadLibrary("decent_usb_audio")
+                true
+            } catch (e: UnsatisfiedLinkError) {
+                Log.w(TAG, "Native library unavailable: ${e.message}")
+                false
+            }
     }
 }

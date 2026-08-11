@@ -15,7 +15,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
- 
+
 package org.oxycblt.auxio.playback.service
 
 import android.content.Context
@@ -663,21 +663,24 @@ class ExoPlaybackStateHolder(
             // battery/apk size/cache size
 
             // Build the base DefaultAudioSink with ReplayGain processor
-            val baseAudioSink = DefaultAudioSink.Builder(context)
-                .setAudioProcessors(arrayOf(replayGainProcessor))
-                .build()
+            val baseAudioSink =
+                DefaultAudioSink.Builder(context)
+                    .setAudioProcessors(arrayOf(replayGainProcessor))
+                    .build()
 
             // If USB DAC bit-perfect mode is enabled, wrap with UsbAudioSink
             // which sends PCM directly to the USB DAC via isochronous transfers,
             // bypassing the entire Android audio stack.
-            val usbSink = if (playbackSettings.usbDacMode) {
-                UsbAudioSink(baseAudioSink, context, UsbAudioSinkConfig(
-                    bitPerfectEnabled = true,
-                    forceRouteToSpeaker = true
-                ))
-            } else {
-                null
-            }
+            val usbSink =
+                if (playbackSettings.usbDacMode) {
+                    UsbAudioSink(
+                        baseAudioSink,
+                        context,
+                        UsbAudioSinkConfig(bitPerfectEnabled = true, forceRouteToSpeaker = true),
+                    )
+                } else {
+                    null
+                }
 
             val audioRenderer = RenderersFactory { handler, _, audioListener, _, _ ->
                 arrayOf<BaseRenderer>(
@@ -695,26 +698,30 @@ class ExoPlaybackStateHolder(
             }
 
             // Wrap LoadControl to prevent ExoPlayer I/O contention when native engine is active
-            val loadControl = if (usbSink != null) {
-                UsbAudioSink.wrapLoadControl(
-                    androidx.media3.exoplayer.DefaultLoadControl.Builder().build()
-                ) { usbSink.isNativeEngineActive }
-            } else {
-                null
-            }
+            val loadControl =
+                if (usbSink != null) {
+                    UsbAudioSink.wrapLoadControl(
+                        androidx.media3.exoplayer.DefaultLoadControl.Builder().build()
+                    ) {
+                        usbSink.isNativeEngineActive
+                    }
+                } else {
+                    null
+                }
 
-            val exoBuilder = ExoPlayer.Builder(context, audioRenderer)
-                .setMediaSourceFactory(mediaSourceFactory)
-                // Enable automatic WakeLock support
-                .setWakeMode(C.WAKE_MODE_LOCAL)
-                .setAudioAttributes(
-                    // Signal that we are a music player.
-                    AudioAttributes.Builder()
-                        .setUsage(C.USAGE_MEDIA)
-                        .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                        .build(),
-                    true,
-                )
+            val exoBuilder =
+                ExoPlayer.Builder(context, audioRenderer)
+                    .setMediaSourceFactory(mediaSourceFactory)
+                    // Enable automatic WakeLock support
+                    .setWakeMode(C.WAKE_MODE_LOCAL)
+                    .setAudioAttributes(
+                        // Signal that we are a music player.
+                        AudioAttributes.Builder()
+                            .setUsage(C.USAGE_MEDIA)
+                            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                            .build(),
+                        true,
+                    )
 
             if (loadControl != null) {
                 exoBuilder.setLoadControl(loadControl)
