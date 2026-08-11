@@ -1,6 +1,10 @@
 package com.decent.usbaudio.media3
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.hardware.usb.UsbManager
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.net.Uri
@@ -9,6 +13,7 @@ import android.os.Looper
 import android.provider.MediaStore
 import android.util.Log
 import androidx.annotation.OptIn
+import androidx.core.content.ContextCompat
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
@@ -45,6 +50,38 @@ class UsbAudioSink(
     private val context: Context,
     private val config: UsbAudioSinkConfig = UsbAudioSinkConfig()
 ) : ForwardingAudioSink(delegate) {
+
+    /** Receiver for [UsbManager.ACTION_USB_DEVICE_DETACHED].
+     *  Releases the USB stream on a background thread so the main thread is not
+     *  blocked by URB draining / native engine teardown. Declared before the
+     *  init block so it is initialized when the block runs. */
+    private val usbDetachedReceiver = object : BroadcastReceiver() {
+        override fun onReceive(c: Context?, intent: Intent?) {
+            if (intent?.action != UsbManager.ACTION_USB_DEVICE_DETACHED) return
+            val device = intent.getParcelableExtra<android.hardware.usb.UsbDevice>(
+                UsbManager.EXTRA_DEVICE
+            )
+            Log.i(TAG, "USB_DEVICE_DETACHED: ${device?.productName} — releasing USB stream")
+            // releaseUsbStream does blocking I/O (drainUrbs, nativeEngine.stop+join);
+            // run on a worker thread to avoid ANR on the main thread.
+            Thread { releaseUsbStream() }.start()
+        }
+    }
+
+    init {
+        // H1 fix: Listen for USB_DEVICE_DETACHED so we can release the USB stream
+        // and unmute the delegate when the DAC is unplugged mid-playback. Without
+        // this, the stream stays "alive-but-broken" and ExoPlayer keeps muting the
+        // delegate, leaving the user with no audio at all after unplug.
+        // RECEIVER_NOT_EXPORTED: only the system can broadcast this intent to us.
+        ContextCompat.registerReceiver(
+            context,
+            usbDetachedReceiver,
+            IntentFilter(UsbManager.ACTION_USB_DEVICE_DETACHED),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+        Log.i(TAG, "USB_DEVICE_DETACHED receiver registered")
+    }
 
     /** Source file bit depth (16, 24, 32). Auto-detected from NativeAudioEngine. */
     private var trackBitDepth: Int = 0
@@ -346,6 +383,22 @@ class UsbAudioSink(
             return true
         }
 
+        // H3 fix: USB stream died mid-track (cable yanked, DAC power-lost, or URB
+        // submission failed). The stream reference is stale — if we don't release
+        // it, (a) usbAudioStream stays non-null and configure() will skip stream
+        // recreation on the next track, (b) clearForcedRouting() is never called
+        // so the delegate stays routed to speaker, (c) every subsequent handleBuffer
+        // call hits this same fallthrough path with a dead stream.
+        // releaseUsbStream() nulls usbAudioStream, drains/closes the fd, clears
+        // forced routing, and unmutes the delegate — exactly what's needed for
+        // ExoPlayer to resume through the normal Android audio path.
+        // Run synchronously here (we're already on the renderer thread, and a dead
+        // stream drains URBs near-instantly since they've already failed).
+        if (config.bitPerfectEnabled && stream != null && !stream.isAlive) {
+            Log.w(TAG, "handleBuffer: USB stream died mid-track — releasing and falling back to delegate")
+            releaseUsbStream()
+        }
+
         unmuteDelegateIfNeeded()
         return super.handleBuffer(buffer, presentationTimeUs, encodedAccessUnitCount)
     }
@@ -480,6 +533,16 @@ class UsbAudioSink(
     }
 
     override fun release() {
+        // H1 fix: unregister the DETACHED receiver so we don't leak a Context-bound
+        // BroadcastReceiver after the sink is released. try/catch guards against
+        // "Receiver not registered" on devices where the receiver was never
+        // successfully registered (e.g., security exceptions on some OEMs).
+        try {
+            context.unregisterReceiver(usbDetachedReceiver)
+            Log.i(TAG, "USB_DEVICE_DETACHED receiver unregistered")
+        } catch (e: IllegalArgumentException) {
+            // Already unregistered or never registered — safe to ignore.
+        }
         releaseUsbStream()
         super.release()
     }
@@ -662,6 +725,7 @@ class UsbAudioSink(
 
     // ── USB stream release ──────────────────────────────────────────
 
+    @Synchronized
     private fun releaseUsbStream() {
         val stream = usbAudioStream ?: return
         usbAudioStream = null
