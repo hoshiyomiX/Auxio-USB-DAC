@@ -101,13 +101,17 @@ class UsbDacVolumeProvider(
 
     /**
      * System (or MediaSession) requested an absolute volume. Clamp, update, propagate downstream.
+     *
+     * Note: [androidx.media.VolumeProviderCompat.onSetVolumeTo] takes only the volume parameter
+     * (no flags). The flags variant `setVolumeTo(volume, flags)` is a final public method on the
+     * parent class that internally calls this override.
      */
-    override fun onSetVolumeTo(volume: Int, flags: Int) {
+    override fun onSetVolumeTo(volume: Int) {
         val newStep = volume.coerceIn(0, MAX_STEPS)
         if (newStep > 0) lastNonZeroStep = newStep
         setCurrentVolume(newStep)
         val linear = newStep.toFloat() / MAX_STEPS
-        L.d("setVolumeTo($volume, flags=$flags) → step $newStep (linear=$linear)")
+        L.d("setVolumeTo($volume) → step $newStep (linear=$linear)")
         onVolumeChanged(linear)
     }
 
