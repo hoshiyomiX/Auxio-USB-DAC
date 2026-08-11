@@ -51,7 +51,6 @@ import org.oxycblt.auxio.playback.state.PlaybackStateManager
 import org.oxycblt.auxio.playback.state.Progression
 import org.oxycblt.auxio.playback.state.QueueChange
 import org.oxycblt.auxio.playback.state.RepeatMode
-import org.oxycblt.auxio.playback.state.ShuffleMode
 import org.oxycblt.auxio.util.newBroadcastPendingIntent
 import org.oxycblt.auxio.util.newMainPendingIntent
 import org.oxycblt.musikr.MusicParent
@@ -141,8 +140,8 @@ private constructor(
 
     /**
      * Register the [UsbDacVolumeProvider] on the [MediaSessionCompat] so that system volume
-     * controls (hardware keys + slider + Bluetooth) route to the USB DAC's hardware Feature
-     * Unit via UAC2 SET_CUR. Idempotent: if a provider is already registered, this is a no-op.
+     * controls (hardware keys + slider + Bluetooth) route to the USB DAC's hardware Feature Unit
+     * via UAC2 SET_CUR. Idempotent: if a provider is already registered, this is a no-op.
      */
     private fun registerUsbVolumeProvider() {
         if (usbVolumeProvider != null) {
@@ -162,9 +161,9 @@ private constructor(
     }
 
     /**
-     * Unregister the [UsbDacVolumeProvider] from the [MediaSessionCompat] and restore default
-     * local playback routing (STREAM_MUSIC) so volume keys adjust the normal Android media
-     * stream. Idempotent: if no provider is registered, this is a no-op.
+     * Unregister the [UsbDacVolumeProvider] from the [MediaSessionCompat] and restore default local
+     * playback routing (STREAM_MUSIC) so volume keys adjust the normal Android media stream.
+     * Idempotent: if no provider is registered, this is a no-op.
      */
     private fun unregisterUsbVolumeProvider() {
         if (usbVolumeProvider == null) {
@@ -268,15 +267,15 @@ private constructor(
     }
 
     /**
-     * Handle a mid-session USB DAC mode toggle by swapping the volume provider registered on
-     * the [MediaSessionCompat]. When USB DAC mode is turned on, register
-     * [UsbDacVolumeProvider] so system volume controls route to the USB DAC's hardware
-     * Feature Unit. When turned off, unregister the provider and restore default
-     * STREAM_MUSIC routing so volume keys adjust the normal Android media stream.
+     * Handle a mid-session USB DAC mode toggle by swapping the volume provider registered on the
+     * [MediaSessionCompat]. When USB DAC mode is turned on, register [UsbDacVolumeProvider] so
+     * system volume controls route to the USB DAC's hardware Feature Unit. When turned off,
+     * unregister the provider and restore default STREAM_MUSIC routing so volume keys adjust the
+     * normal Android media stream.
      *
-     * The audio pipeline switch itself (USB bit-perfect ↔ Android AudioFlinger) is handled
-     * by [ExoPlaybackStateHolder.onUsbDacModeChanged]; this method only handles the volume
-     * routing half of the toggle.
+     * The audio pipeline switch itself (USB bit-perfect ↔ Android AudioFlinger) is handled by
+     * [ExoPlaybackStateHolder.onUsbDacModeChanged]; this method only handles the volume routing
+     * half of the toggle.
      */
     override fun onUsbDacModeChanged() {
         super.onUsbDacModeChanged()

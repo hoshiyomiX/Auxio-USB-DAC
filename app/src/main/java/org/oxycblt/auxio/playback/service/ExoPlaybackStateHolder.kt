@@ -579,11 +579,11 @@ class ExoPlaybackStateHolder(
     }
 
     /**
-     * Handle a mid-session USB DAC mode toggle. Flips the [UsbAudioSink.bitPerfectEnabled] flag
-     * at runtime so the audio pipeline switches between USB bit-perfect output and the normal
-     * Android AudioFlinger path without an app or service restart. If a session is ongoing,
-     * also forces a renderer reconfigure via [Player.seekTo] with the current position so that
-     * the change takes effect on the currently-playing track instead of only on the next track.
+     * Handle a mid-session USB DAC mode toggle. Flips the [UsbAudioSink.bitPerfectEnabled] flag at
+     * runtime so the audio pipeline switches between USB bit-perfect output and the normal Android
+     * AudioFlinger path without an app or service restart. If a session is ongoing, also forces a
+     * renderer reconfigure via [Player.seekTo] with the current position so that the change takes
+     * effect on the currently-playing track instead of only on the next track.
      *
      * The volume provider swap is handled separately by [MediaSessionHolder].
      */

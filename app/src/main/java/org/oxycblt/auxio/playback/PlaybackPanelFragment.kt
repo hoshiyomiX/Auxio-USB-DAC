@@ -378,20 +378,22 @@ class PlaybackPanelFragment :
     }
 
     /**
-     * Reflect the current USB DAC bit-perfect mode in the toolbar toggle icon. When [enabled]
-     * is true, the menu item is checked (selector drawable shows the primary-tinted icon);
-     * when false, it shows the default-tinted icon. The selector drawable
-     * [R.drawable.sel_usb_dac_state_24] handles the icon swap based on the item's checked state.
+     * Reflect the current USB DAC bit-perfect mode in the toolbar toggle icon. When [enabled] is
+     * true, the menu item is checked (selector drawable shows the primary-tinted icon); when false,
+     * it shows the default-tinted icon. The selector drawable [R.drawable.sel_usb_dac_state_24]
+     * handles the icon swap based on the item's checked state.
      */
     private fun updateUsbDacToggle(enabled: Boolean) {
-        val item = requireBinding().playbackToolbar.menu.findItem(R.id.action_toggle_usb_dac) ?: return
+        val item =
+            requireBinding().playbackToolbar.menu.findItem(R.id.action_toggle_usb_dac) ?: return
         item.isChecked = enabled
         // Force the icon to refresh from the selector — without this the toolbar may cache
         // the original icon and not pick up the state change immediately.
-        item.icon = androidx.core.content.ContextCompat.getDrawable(
-            requireContext(),
-            if (enabled) R.drawable.ic_usb_dac_on_24 else R.drawable.ic_usb_dac_off_24,
-        )
+        item.icon =
+            androidx.core.content.ContextCompat.getDrawable(
+                requireContext(),
+                if (enabled) R.drawable.ic_usb_dac_on_24 else R.drawable.ic_usb_dac_off_24,
+            )
     }
 
     override fun seek(direction: Direction) {
