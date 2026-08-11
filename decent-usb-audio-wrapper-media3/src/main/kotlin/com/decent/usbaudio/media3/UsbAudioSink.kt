@@ -52,6 +52,52 @@ class UsbAudioSink(
     private val config: UsbAudioSinkConfig = UsbAudioSinkConfig()
 ) : ForwardingAudioSink(delegate) {
 
+    /**
+     * Runtime-toggleable flag mirroring [UsbAudioSinkConfig.bitPerfectEnabled]. Initialized from
+     * the config at construction, but can be flipped at runtime via [setBitPerfectEnabled] when
+     * the user toggles USB DAC mode mid-session. All bit-perfect code paths read this field
+     * instead of the immutable [config] value so that the change takes effect without an
+     * ExoPlayer rebuild.
+     */
+    @Volatile
+    var bitPerfectEnabled: Boolean = config.bitPerfectEnabled
+        private set
+
+    /**
+     * Toggle bit-perfect mode at runtime, without rebuilding the ExoPlayer.
+     *
+     * When turning [enabled] off, synchronously tears down the USB stream (stops native
+     * engine, drains URBs, unmutes the delegate AudioTrack) so audio immediately falls
+     * back to the normal Android AudioFlinger path. When turning [enabled] on, simply
+     * flips the flag — the next [configure] call (triggered by the caller via
+     * `player.seekTo(currentPosition)`) will set up the USB stream.
+     *
+     * Thread-safe: synchronized on the sink to serialize with [releaseUsbStream] and
+     * [snapshotAudioInfo].
+     *
+     * @param enabled True to enable USB DAC bit-perfect output, false to fall back to
+     * the Android audio stack.
+     */
+    @Synchronized
+    fun setBitPerfectEnabled(enabled: Boolean) {
+        if (bitPerfectEnabled == enabled) {
+            Log.i(TAG, "setBitPerfectEnabled($enabled) — no change, skipping")
+            return
+        }
+        bitPerfectEnabled = enabled
+        Log.i(TAG, "setBitPerfectEnabled($enabled) — applying runtime toggle")
+        if (!enabled) {
+            // Tear down USB stream immediately so the delegate AudioTrack unmutes and
+            // audio resumes through the normal Android path on the next buffer.
+            releaseUsbStream()
+            clearForcedRouting()
+            unmuteDelegateIfNeeded()
+        }
+        // When turning on, no action needed here — the caller forces a renderer
+        // reconfigure (via player.seekTo(currentPosition)) which triggers configure()
+        // to set up the USB stream afresh.
+    }
+
     /** Receiver for [UsbManager.ACTION_USB_DEVICE_DETACHED].
      *  Releases the USB stream on a background thread so the main thread is not
      *  blocked by URB draining / native engine teardown. Declared before the
@@ -277,7 +323,7 @@ class UsbAudioSink(
             else -> "UNKNOWN($enc)"
         }} rate=${inputFormat.sampleRate} ch=${inputFormat.channelCount}")
 
-        if (config.bitPerfectEnabled && sr != null && ch != null) {
+        if (bitPerfectEnabled && sr != null && ch != null) {
             val device = usbAudioDevice.findUsbAudioDevice()
             if (device != null && usbAudioDevice.hasPermission(device)) {
                 configureUsbBitPerfect(sr, ch, enc)
@@ -295,7 +341,7 @@ class UsbAudioSink(
 
         super.configure(inputFormat, specifiedBufferSize, outputChannels)
 
-        if (usbAudioStream != null && !config.bitPerfectEnabled) {
+        if (usbAudioStream != null && !bitPerfectEnabled) {
             releaseUsbStream()
         }
     }
@@ -306,7 +352,7 @@ class UsbAudioSink(
         encodedAccessUnitCount: Int
     ): Boolean {
         val stream = usbAudioStream
-        if (config.bitPerfectEnabled && stream?.isAlive == true) {
+        if (bitPerfectEnabled && stream?.isAlive == true) {
             muteDelegateIfNeeded()
 
             // Fallback engine creation: if no engine and no streaming thread,
@@ -434,7 +480,7 @@ class UsbAudioSink(
         // ExoPlayer to resume through the normal Android audio path.
         // Run synchronously here (we're already on the renderer thread, and a dead
         // stream drains URBs near-instantly since they've already failed).
-        if (config.bitPerfectEnabled && stream != null && !stream.isAlive) {
+        if (bitPerfectEnabled && stream != null && !stream.isAlive) {
             Log.w(TAG, "handleBuffer: USB stream died mid-track — releasing and falling back to delegate")
             releaseUsbStream()
         }
@@ -450,7 +496,7 @@ class UsbAudioSink(
     private var engineEndNotified = false
 
     override fun getCurrentPositionUs(sourceEnded: Boolean): Long {
-        if (config.bitPerfectEnabled) {
+        if (bitPerfectEnabled) {
             val streamAlive = usbAudioStream?.isAlive == true
             val engine = nativeEngine ?: nativeOpusEngine
             val engineCreated = engine?.isCreated == true
@@ -496,7 +542,7 @@ class UsbAudioSink(
     }
 
     override fun isEnded(): Boolean {
-        if (config.bitPerfectEnabled) {
+        if (bitPerfectEnabled) {
             val engine = nativeEngine ?: nativeOpusEngine
             // Engine still running → not ended
             if (engine != null && engine.isRunning) return false
@@ -509,7 +555,7 @@ class UsbAudioSink(
     }
 
     override fun hasPendingData(): Boolean {
-        if (config.bitPerfectEnabled) {
+        if (bitPerfectEnabled) {
             // Engine running → has pending data
             if (nativeEngine?.isRunning == true || nativeOpusEngine?.isRunning == true) return true
             if (usbStreamingThread?.hasPendingData() == true) return true
@@ -546,7 +592,7 @@ class UsbAudioSink(
 
     override fun setVolume(volume: Float) {
         pendingVolume = volume
-        if (config.bitPerfectEnabled && usbAudioStream?.isAlive == true) {
+        if (bitPerfectEnabled && usbAudioStream?.isAlive == true) {
             muteDelegateIfNeeded()
             // Bit-perfect mode: audio bypasses Android's AudioTrack and goes directly
             // to the USB DAC via isochronous transfers. The muted delegate AudioTrack
@@ -1114,7 +1160,7 @@ class UsbAudioSink(
         val opusEngine = nativeOpusEngine
         val stream = usbAudioStream
         val streamAlive = stream?.isAlive == true
-        val bitPerfectOn = config.bitPerfectEnabled
+        val bitPerfectOn = bitPerfectEnabled
 
         // --- Decoder info ---
         val decoderInfo: String? = when {

@@ -145,6 +145,10 @@ constructor(
     /** Whether the audio info overlay on the album art is currently visible. */
     val overlayVisible: StateFlow<Boolean> = _overlayVisible
 
+    private val _usbDacMode = MutableStateFlow(playbackSettings.usbDacMode)
+    /** Whether USB DAC bit-perfect mode is currently enabled. Drives the player toolbar toggle icon. */
+    val usbDacMode: StateFlow<Boolean> = _usbDacMode
+
     init {
         playbackManager.addListener(this)
         playbackSettings.registerListener(this)
@@ -233,6 +237,18 @@ constructor(
 
     override fun onAudioInfoOverlayChanged() {
         _overlayVisible.value = playbackSettings.audioInfoOverlayVisible
+    }
+
+    override fun onUsbDacModeChanged() {
+        _usbDacMode.value = playbackSettings.usbDacMode
+    }
+
+    /** Toggle USB DAC bit-perfect mode at runtime. Persists to settings and dispatches to listeners. */
+    fun toggleUsbDacMode() {
+        L.d("Toggling USB DAC bit-perfect mode")
+        val newValue = !_usbDacMode.value
+        playbackSettings.usbDacMode = newValue
+        // _usbDacMode is updated by onUsbDacModeChanged() which fires from the settings dispatch.
     }
 
     /**

@@ -61,7 +61,7 @@ interface PlaybackSettings : Settings<PlaybackSettings.Listener> {
     /** Whether to always exit when task is removed, even if playing. */
     val exitOnTaskRemoval: Boolean
     /** Whether USB DAC bit-perfect mode is enabled (bypass Android audio stack). */
-    val usbDacMode: Boolean
+    var usbDacMode: Boolean
     /**
      * Whether the audio info overlay on the album art is currently visible. Persisted across
      * sessions.
@@ -150,8 +150,14 @@ class PlaybackSettingsImpl @Inject constructor(@ApplicationContext context: Cont
     override val exitOnTaskRemoval: Boolean
         get() = sharedPreferences.getBoolean(getString(R.string.set_key_task_exit), false)
 
-    override val usbDacMode: Boolean
+    override var usbDacMode: Boolean
         get() = sharedPreferences.getBoolean(getString(R.string.set_key_usb_dac_mode), false)
+        set(value) {
+            sharedPreferences.edit {
+                putBoolean(getString(R.string.set_key_usb_dac_mode), value)
+                apply()
+            }
+        }
 
     override var audioInfoOverlayVisible: Boolean
         get() = sharedPreferences.getBoolean(getString(R.string.set_key_audio_info_overlay), true)

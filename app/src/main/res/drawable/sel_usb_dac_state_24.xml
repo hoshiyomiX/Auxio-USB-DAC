@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Selector drawable for the USB DAC bit-perfect toolbar toggle.
+  Uses the menu item's checked state (toggled on/off via setIconResource switch
+  in PlaybackPanelFragment.updateUsbDacToggle) to pick the active vs inactive icon.
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_checked="true" android:drawable="@drawable/ic_usb_dac_on_24" />
+    <item android:drawable="@drawable/ic_usb_dac_off_24" />
+</selector>

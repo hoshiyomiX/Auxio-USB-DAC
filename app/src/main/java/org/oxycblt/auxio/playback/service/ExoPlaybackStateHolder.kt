@@ -578,6 +578,30 @@ class ExoPlaybackStateHolder(
         updatePauseOnRepeat()
     }
 
+    /**
+     * Handle a mid-session USB DAC mode toggle. Flips the [UsbAudioSink.bitPerfectEnabled] flag
+     * at runtime so the audio pipeline switches between USB bit-perfect output and the normal
+     * Android AudioFlinger path without an app or service restart. If a session is ongoing,
+     * also forces a renderer reconfigure via [Player.seekTo] with the current position so that
+     * the change takes effect on the currently-playing track instead of only on the next track.
+     *
+     * The volume provider swap is handled separately by [MediaSessionHolder].
+     */
+    override fun onUsbDacModeChanged() {
+        super.onUsbDacModeChanged()
+        val enabled = playbackSettings.usbDacMode
+        L.d("USB DAC mode changed mid-session: $enabled — applying at runtime")
+        usbSink?.setBitPerfectEnabled(enabled)
+        // Force the audio renderer to re-configure so the new bitPerfectEnabled value
+        // is honored on the current track. seekTo(currentPosition) flushes the renderer
+        // and triggers a fresh configure() call on the next buffer.
+        if (sessionOngoing) {
+            val pos = player.currentPosition
+            L.d("Forcing renderer reconfigure via seekTo($pos)")
+            player.seekTo(pos)
+        }
+    }
+
     private fun updatePauseOnRepeat() {
         player.pauseAtEndOfMediaItems =
             player.repeatMode == Player.REPEAT_MODE_ONE && playbackSettings.pauseOnRepeat
@@ -686,45 +710,48 @@ class ExoPlaybackStateHolder(
                     .setAudioProcessors(arrayOf(replayGainProcessor))
                     .build()
 
-            // If USB DAC bit-perfect mode is enabled, wrap with UsbAudioSink
-            // which sends PCM directly to the USB DAC via isochronous transfers,
-            // bypassing the entire Android audio stack.
+            // Always wrap with UsbAudioSink so that the user can toggle USB DAC bit-perfect
+            // mode at runtime (via the player toolbar button) without an app/service restart.
+            // When usbDacMode is off, the sink's bitPerfectEnabled flag is initialized to
+            // false, so all bit-perfect code paths are skipped and audio flows through the
+            // delegate DefaultAudioSink → Android AudioFlinger as normal. Flipping the
+            // setting at runtime invokes UsbAudioSink.setBitPerfectEnabled() via
+            // onUsbDacModeChanged(), which flips the volatile flag and (if turning off)
+            // tears down the USB stream synchronously.
             val usbSink =
-                if (playbackSettings.usbDacMode) {
-                    UsbAudioSink(
-                        baseAudioSink,
-                        context,
-                        UsbAudioSinkConfig(bitPerfectEnabled = true, forceRouteToSpeaker = true),
-                    )
-                } else {
-                    null
-                }
+                UsbAudioSink(
+                    baseAudioSink,
+                    context,
+                    UsbAudioSinkConfig(
+                        bitPerfectEnabled = playbackSettings.usbDacMode,
+                        forceRouteToSpeaker = true,
+                    ),
+                )
 
             val audioRenderer = RenderersFactory { handler, _, audioListener, _, _ ->
                 arrayOf<BaseRenderer>(
                     // FFmpeg renderer: pass AudioSink so USB DAC mode works for all formats
                     // (MP3, AAC, OGG, etc. decoded by FFmpeg, not just MediaCodec-decoded formats)
-                    FfmpegAudioRenderer(handler, audioListener, usbSink ?: baseAudioSink),
+                    FfmpegAudioRenderer(handler, audioListener, usbSink),
                     MediaCodecAudioRenderer(
                         context,
                         MediaCodecSelector.DEFAULT,
                         handler,
                         audioListener,
-                        usbSink ?: baseAudioSink,
+                        usbSink,
                     ),
                 )
             }
 
-            // Wrap LoadControl to prevent ExoPlayer I/O contention when native engine is active
+            // Wrap LoadControl to prevent ExoPlayer I/O contention when native engine is active.
+            // Always wrap (even when bit-perfect is off) so the wrapper is in place when the
+            // user toggles the mode on mid-session — otherwise we'd need to rebuild the player
+            // to add the wrapper, which defeats the whole point of runtime toggle.
             val loadControl =
-                if (usbSink != null) {
-                    UsbAudioSink.wrapLoadControl(
-                        androidx.media3.exoplayer.DefaultLoadControl.Builder().build()
-                    ) {
-                        usbSink.isNativeEngineActive
-                    }
-                } else {
-                    null
+                UsbAudioSink.wrapLoadControl(
+                    androidx.media3.exoplayer.DefaultLoadControl.Builder().build()
+                ) {
+                    usbSink.isNativeEngineActive
                 }
 
             val exoBuilder =
@@ -741,14 +768,12 @@ class ExoPlaybackStateHolder(
                         true,
                     )
 
-            if (loadControl != null) {
-                exoBuilder.setLoadControl(loadControl)
-            }
+            exoBuilder.setLoadControl(loadControl)
 
             val exoPlayer = exoBuilder.build()
 
             // Attach UsbAudioSink to the player for URI resolution and engine lifecycle
-            usbSink?.attachToPlayer(exoPlayer)
+            usbSink.attachToPlayer(exoPlayer)
 
             // Expose the sink to the UI layer via AudioInfoProvider so that
             // PlaybackViewModel can poll audio pipeline state for the album-art overlay.

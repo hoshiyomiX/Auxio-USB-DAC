@@ -119,6 +119,8 @@
 
     <string name="lbl_playback">Now playing</string>
     <string name="lbl_equalizer">Equalizer</string>
+    <string name="lbl_usb_dac_toggle">USB DAC bit-perfect</string>
+    <string name="desc_usb_dac_toggle">Toggle USB DAC bit-perfect output at runtime without restarting the app</string>
     <string name="lbl_play">Play</string>
     <string name="lbl_shuffle">Shuffle</string>
 
@@ -321,7 +323,7 @@
     <!-- USB DAC / Bit-Perfect settings -->
     <string name="set_usb_dac">USB DAC</string>
     <string name="set_usb_dac_mode">USB DAC mode (Bit-Perfect FLAC/Opus)</string>
-    <string name="set_usb_dac_mode_desc">Bypass Android audio framework and send PCM directly to USB DAC via isochronous transfers. True bit-perfect output is achieved for FLAC files (decoded by the native libFLAC engine) and OGG/Opus files (decoded by the native libopus engine); other formats (MP3, AAC, OGG/Vorbis, etc.) are decoded by FFmpeg and sent as 32-bit float, which is then converted to integer PCM for the DAC. Requires Android 10+, a USB Audio Class 2.0 DAC, the libopus source (run decent-usb-audio-driver/setup.sh before building), and app restart to take effect.</string>
+    <string name="set_usb_dac_mode_desc">Bypass Android audio framework and send PCM directly to USB DAC via isochronous transfers. True bit-perfect output is achieved for FLAC files (decoded by the native libFLAC engine) and OGG/Opus files (decoded by the native libopus engine); other formats (MP3, AAC, OGG/Vorbis, etc.) are decoded by FFmpeg and sent as 32-bit float, which is then converted to integer PCM for the DAC. Requires Android 10+, a USB Audio Class 2.0 DAC, and the libopus source (run decent-usb-audio-driver/setup.sh before building). Toggle takes effect immediately — no app restart required.</string>
 
     <!-- Audio info overlay labels (shown on top of album art) -->
     <string name="lbl_audio_info_decoder">Decoder</string>

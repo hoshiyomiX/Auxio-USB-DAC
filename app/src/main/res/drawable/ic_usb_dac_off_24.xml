@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  USB DAC bit-perfect toggle icon (inactive state).
+  Tinted with colorControlNormal so it sits naturally on the toolbar when off.
+  Same USB-plug silhouette as the on state; only the tint differs.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="960"
+    android:viewportHeight="960"
+    android:tint="?attr/colorControlNormal">
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M480,880Q447,880 423.5,856.5Q400,833 400,800Q400,767 423.5,743.5Q447,720 480,720Q513,720 536.5,743.5Q560,767 560,800Q560,833 536.5,856.5Q513,880 480,880ZM260,640Q227,640 203.5,616.5Q180,593 180,560Q180,527 203.5,503.5Q227,480 260,480Q293,480 316.5,503.5Q340,527 340,560Q340,593 316.5,616.5Q293,640 260,640ZM620,640Q587,640 563.5,616.5Q540,593 540,560Q540,527 563.5,503.5Q587,480 620,480Q653,480 676.5,503.5Q700,527 700,560Q700,593 676.5,616.5Q653,640 620,640ZM440,400V240L360,320L300,260L480,80L660,260L600,320L520,240V400L440,400Z" />
+</vector>

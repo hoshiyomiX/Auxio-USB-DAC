@@ -51,6 +51,7 @@ import org.oxycblt.auxio.playback.state.PlaybackStateManager
 import org.oxycblt.auxio.playback.state.Progression
 import org.oxycblt.auxio.playback.state.QueueChange
 import org.oxycblt.auxio.playback.state.RepeatMode
+import org.oxycblt.auxio.playback.state.ShuffleMode
 import org.oxycblt.auxio.util.newBroadcastPendingIntent
 import org.oxycblt.auxio.util.newMainPendingIntent
 import org.oxycblt.musikr.MusicParent
@@ -72,7 +73,7 @@ private constructor(
     private val imageSettings: ImageSettings,
     private val mediaSessionInterface: MediaSessionInterface,
     private val playbackSettings: PlaybackSettings,
-) : PlaybackStateManager.Listener, ImageSettings.Listener {
+) : PlaybackStateManager.Listener, ImageSettings.Listener, PlaybackSettings.Listener {
 
     class Factory
     @Inject
@@ -122,30 +123,56 @@ private constructor(
     fun attach() {
         playbackManager.addListener(this)
         imageSettings.registerListener(this)
+        playbackSettings.registerListener(this)
         mediaSession.apply {
             isActive = true
             setQueueTitle(context.getString(R.string.lbl_queue))
             setCallback(mediaSessionInterface)
         }
-        // If USB DAC bit-perfect mode is on, route system volume controls (hardware keys + slider +
-        // Bluetooth) to the USB DAC's hardware volume via UAC2 SET_CUR on the Feature Unit. This is
-        // what makes the volume buttons and the system volume slider actually adjust the audible
-        // output when the audio bypasses Android's AudioFlinger (which is the whole point of
-        // bit-perfect mode). When USB DAC mode is off, we leave the MediaSession on its default
-        // local playback routing, so STREAM_MUSIC volume works normally for the speaker /
-        // headphones / Bluetooth.
+        // If USB DAC bit-perfect mode is on at service start, route system volume controls
+        // (hardware keys + slider + Bluetooth) to the USB DAC's hardware volume via UAC2
+        // SET_CUR on the Feature Unit. When USB DAC mode is off, leave the MediaSession on
+        // its default local playback routing so STREAM_MUSIC volume works normally.
+        // Mid-session toggles are handled by [onUsbDacModeChanged].
         if (playbackSettings.usbDacMode) {
-            val cb = volumeCallback
-            if (cb != null) {
-                val provider = UsbDacVolumeProvider(onVolumeChanged = cb, initialVolume = 1f)
-                usbVolumeProvider = provider
-                mediaSession.setPlaybackToRemote(provider)
-                L.d("MediaSession: USB DAC mode active — registered UsbDacVolumeProvider")
-            } else {
-                L.w("USB DAC active but volumeCallback null — volume keys won't adjust USB DAC")
-                L.w("Set volumeCallback before attach() to enable USB DAC volume control")
-            }
+            registerUsbVolumeProvider()
         }
+    }
+
+    /**
+     * Register the [UsbDacVolumeProvider] on the [MediaSessionCompat] so that system volume
+     * controls (hardware keys + slider + Bluetooth) route to the USB DAC's hardware Feature
+     * Unit via UAC2 SET_CUR. Idempotent: if a provider is already registered, this is a no-op.
+     */
+    private fun registerUsbVolumeProvider() {
+        if (usbVolumeProvider != null) {
+            L.d("MediaSession: UsbDacVolumeProvider already registered — skipping")
+            return
+        }
+        val cb = volumeCallback
+        if (cb != null) {
+            val provider = UsbDacVolumeProvider(onVolumeChanged = cb, initialVolume = 1f)
+            usbVolumeProvider = provider
+            mediaSession.setPlaybackToRemote(provider)
+            L.d("MediaSession: USB DAC mode active — registered UsbDacVolumeProvider")
+        } else {
+            L.w("USB DAC active but volumeCallback null — volume keys won't adjust USB DAC")
+            L.w("Set volumeCallback before attach() to enable USB DAC volume control")
+        }
+    }
+
+    /**
+     * Unregister the [UsbDacVolumeProvider] from the [MediaSessionCompat] and restore default
+     * local playback routing (STREAM_MUSIC) so volume keys adjust the normal Android media
+     * stream. Idempotent: if no provider is registered, this is a no-op.
+     */
+    private fun unregisterUsbVolumeProvider() {
+        if (usbVolumeProvider == null) {
+            return
+        }
+        mediaSession.setPlaybackToLocal(android.media.AudioManager.STREAM_MUSIC)
+        usbVolumeProvider = null
+        L.d("MediaSession: UsbDacVolumeProvider unregistered — restored STREAM_MUSIC routing")
     }
 
     fun tryMediaButtonIntent(intent: Intent): Boolean =
@@ -159,12 +186,10 @@ private constructor(
         bitmapProvider.release()
         playbackManager.removeListener(this)
         imageSettings.unregisterListener(this)
+        playbackSettings.unregisterListener(this)
         // If we registered a remote volume provider, un-register it before releasing the session
         // to restore default STREAM_MUSIC routing for the next session.
-        if (usbVolumeProvider != null) {
-            mediaSession.setPlaybackToLocal(android.media.AudioManager.STREAM_MUSIC)
-            usbVolumeProvider = null
-        }
+        unregisterUsbVolumeProvider()
         mediaSession.apply {
             isActive = false
             release()
@@ -240,6 +265,28 @@ private constructor(
     override fun onImageSettingsChanged() {
         // Need to reload the metadata cover.
         updateMediaMetadata(playbackManager.currentSong, playbackManager.parent)
+    }
+
+    /**
+     * Handle a mid-session USB DAC mode toggle by swapping the volume provider registered on
+     * the [MediaSessionCompat]. When USB DAC mode is turned on, register
+     * [UsbDacVolumeProvider] so system volume controls route to the USB DAC's hardware
+     * Feature Unit. When turned off, unregister the provider and restore default
+     * STREAM_MUSIC routing so volume keys adjust the normal Android media stream.
+     *
+     * The audio pipeline switch itself (USB bit-perfect ↔ Android AudioFlinger) is handled
+     * by [ExoPlaybackStateHolder.onUsbDacModeChanged]; this method only handles the volume
+     * routing half of the toggle.
+     */
+    override fun onUsbDacModeChanged() {
+        super.onUsbDacModeChanged()
+        val enabled = playbackSettings.usbDacMode
+        L.d("MediaSession: USB DAC mode changed mid-session: $enabled — swapping volume provider")
+        if (enabled) {
+            registerUsbVolumeProvider()
+        } else {
+            unregisterUsbVolumeProvider()
+        }
     }
 
     // --- MEDIASESSION OVERRIDES ---

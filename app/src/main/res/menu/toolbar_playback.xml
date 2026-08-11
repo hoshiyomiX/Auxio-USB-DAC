@@ -2,8 +2,9 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
     <item
-        android:id="@+id/action_open_equalizer"
-        android:icon="@drawable/ic_config_24"
-        android:title="@string/lbl_equalizer"
+        android:id="@+id/action_toggle_usb_dac"
+        android:checkable="true"
+        android:icon="@drawable/sel_usb_dac_state_24"
+        android:title="@string/lbl_usb_dac_toggle"
         app:showAsAction="always" />
 </menu>
