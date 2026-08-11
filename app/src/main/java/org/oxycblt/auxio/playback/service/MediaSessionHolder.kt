@@ -104,19 +104,18 @@ private constructor(
         get() = _notification
 
     /**
-     * Callback invoked when the system requests a volume change via the
-     * [UsbDacVolumeProvider] (registered when USB DAC mode is active). The owner
-     * of this holder (PlaybackServiceFragment) sets this to forward the volume
-     * to the ExoPlayer via `ExoPlaybackStateHolder.applyVolume`. Must be set
-     * before [attach] for USB DAC mode to receive volume changes.
+     * Callback invoked when the system requests a volume change via the [UsbDacVolumeProvider]
+     * (registered when USB DAC mode is active). The owner of this holder (PlaybackServiceFragment)
+     * sets this to forward the volume to the ExoPlayer via `ExoPlaybackStateHolder.applyVolume`.
+     * Must be set before [attach] for USB DAC mode to receive volume changes.
      */
     var volumeCallback: ((Float) -> Unit)? = null
 
     /**
-     * The volume provider currently registered on the MediaSession, if any. Non-null
-     * only while USB DAC mode is active and [attach] has wired up remote playback.
-     * Kept as a field so that external app-side volume changes can be pushed into
-     * the provider via [UsbDacVolumeProvider.updateFromExternal].
+     * The volume provider currently registered on the MediaSession, if any. Non-null only while
+     * USB DAC mode is active and [attach] has wired up remote playback. Kept as a field so that
+     * external app-side volume changes can be pushed into the provider via
+     * [UsbDacVolumeProvider.updateFromExternal].
      */
     private var usbVolumeProvider: UsbDacVolumeProvider? = null
 
@@ -128,13 +127,12 @@ private constructor(
             setQueueTitle(context.getString(R.string.lbl_queue))
             setCallback(mediaSessionInterface)
         }
-        // If USB DAC bit-perfect mode is on, route system volume controls (hardware
-        // keys + slider + Bluetooth) to the USB DAC's hardware volume via UAC2 SET_CUR
-        // on the Feature Unit. This is what makes the volume buttons and the system
-        // volume slider actually adjust the audible output when the audio bypasses
-        // Android's AudioFlinger (which is the whole point of bit-perfect mode).
-        // When USB DAC mode is off, we leave the MediaSession on its default local
-        // playback routing, so STREAM_MUSIC volume works normally for the speaker /
+        // If USB DAC bit-perfect mode is on, route system volume controls (hardware keys + slider +
+        // Bluetooth) to the USB DAC's hardware volume via UAC2 SET_CUR on the Feature Unit. This is
+        // what makes the volume buttons and the system volume slider actually adjust the audible
+        // output when the audio bypasses Android's AudioFlinger (which is the whole point of
+        // bit-perfect mode). When USB DAC mode is off, we leave the MediaSession on its default
+        // local playback routing, so STREAM_MUSIC volume works normally for the speaker /
         // headphones / Bluetooth.
         if (playbackSettings.usbDacMode) {
             val cb = volumeCallback
@@ -142,10 +140,10 @@ private constructor(
                 val provider = UsbDacVolumeProvider(onVolumeChanged = cb, initialVolume = 1f)
                 usbVolumeProvider = provider
                 mediaSession.setPlaybackToRemote(provider)
-                L.d("MediaSession: USB DAC mode active — registered UsbDacVolumeProvider (remote playback)")
+                L.d("MediaSession: USB DAC mode active — registered UsbDacVolumeProvider")
             } else {
-                L.w("MediaSession: USB DAC mode active but volumeCallback is null — volume keys/slider will not adjust USB DAC. " +
-                    "Set volumeCallback before attach() to enable USB DAC volume control.")
+                L.w("USB DAC active but volumeCallback null — volume keys won't adjust USB DAC")
+                L.w("Set volumeCallback before attach() to enable USB DAC volume control")
             }
         }
     }
@@ -161,8 +159,8 @@ private constructor(
         bitmapProvider.release()
         playbackManager.removeListener(this)
         imageSettings.unregisterListener(this)
-        // If we registered a remote volume provider, un-register it before releasing
-        // the session to restore default STREAM_MUSIC routing for the next session.
+        // If we registered a remote volume provider, un-register it before releasing the session
+        // to restore default STREAM_MUSIC routing for the next session.
         if (usbVolumeProvider != null) {
             mediaSession.setPlaybackToLocal(android.media.AudioManager.STREAM_MUSIC)
             usbVolumeProvider = null

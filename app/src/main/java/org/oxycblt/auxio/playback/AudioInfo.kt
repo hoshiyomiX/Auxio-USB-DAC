@@ -67,12 +67,12 @@ data class AudioInfo(
          * The [Song] is used as a fallback source for fields that the sink snapshot cannot populate
          * when USB DAC mode is off, when no DAC is plugged in, or when the sink has not yet
          * received a track transition. This prevents the overlay from showing mostly "—" for
-         * decoder/format/sampling/bitrate whenever the USB DAC pipeline is inactive —
-         * which is the common case for users testing the overlay without a DAC attached.
+         * decoder/format/sampling/bitrate whenever the USB DAC pipeline is inactive — which is the
+         * common case for users testing the overlay without a DAC attached.
          *
-         * Note: The overlay no longer has a "Resolution" field — the source sample rate is
-         * already shown by the Sampling field, and the resampling state is shown by the
-         * Resampler field. Resolution was redundant.
+         * Note: The overlay no longer has a "Resolution" field — the source sample rate is already
+         * shown by the Sampling field, and the resampling state is shown by the Resampler field.
+         * Resolution was redundant.
          *
          * @param snapshot The latest snapshot from [com.decent.usbaudio.media3.UsbAudioSink], or
          *   null if the USB DAC sink is not active (e.g., the setting is off or no sink has been
@@ -153,9 +153,7 @@ data class AudioInfo(
                 is Format.Unknown -> format.extension ?: "Unknown"
             }
 
-        /**
-         * Format the [Song]'s effective sampling info (sample rate only, bit depth unknown).
-         */
+        /** Format the [Song]'s effective sampling info (sample rate only, bit depth unknown). */
         private fun formatSongSampling(song: Song): String =
             if (song.sampleRateHz > 0) "${formatRate(song.sampleRateHz)} / ?-bit" else DASH
 
