@@ -15,7 +15,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-
+ 
 package org.oxycblt.auxio.playback.ui
 
 import android.content.Context
@@ -35,24 +35,22 @@ import org.oxycblt.auxio.playback.AudioInfo
 import org.oxycblt.auxio.ui.UISettings
 
 /**
- * Overlay rendered on top of the album art that shows the current audio pipeline
- * state (decoder, format, sample rate, bit-perfect status, etc.).
+ * Overlay rendered on top of the album art that shows the current audio pipeline state (decoder,
+ * format, sample rate, bit-perfect status, etc.).
  *
- * Mirrors the visual pattern of [org.oxycblt.auxio.playback.ui.stepper.StepperOverlay]:
- * same 1:1 aspect-ratio sibling of [org.oxycblt.auxio.image.CoverView], same rounded-corner
- * clipping via [MaterialShapeDrawable] that respects [UISettings.roundMode]. Does not
- * consume touch events — single-tap-to-toggle is handled by the parent
+ * Mirrors the visual pattern of [org.oxycblt.auxio.playback.ui.stepper.StepperOverlay]: same 1:1
+ * aspect-ratio sibling of [org.oxycblt.auxio.image.CoverView], same rounded-corner clipping via
+ * [MaterialShapeDrawable] that respects [UISettings.roundMode]. Does not consume touch events —
+ * single-tap-to-toggle is handled by the parent
  * [org.oxycblt.auxio.playback.ui.swiper.CoverViewHolder] via the StepperOverlay's
  * [org.oxycblt.auxio.playback.ui.stepper.StepperOverlay.onSingleTap] callback.
  *
- * Visibility is driven by [org.oxycblt.auxio.playback.PlaybackViewModel.overlayVisible]:
- * when false, the overlay's child views are hidden (alpha = 0) but the overlay itself
- * remains attached so that re-showing is instant and the StepperOverlay's single-tap
- * handling continues to work.
+ * Visibility is driven by [org.oxycblt.auxio.playback.PlaybackViewModel.overlayVisible]: when
+ * false, the overlay's child views are hidden (alpha = 0) but the overlay itself remains attached
+ * so that re-showing is instant and the StepperOverlay's single-tap handling continues to work.
  */
 @AndroidEntryPoint
-class AudioInfoOverlay(context: Context, attrs: AttributeSet?) :
-    ConstraintLayout(context, attrs) {
+class AudioInfoOverlay(context: Context, attrs: AttributeSet?) : ConstraintLayout(context, attrs) {
 
     @Inject lateinit var uiSettings: UISettings
 
@@ -115,17 +113,17 @@ class AudioInfoOverlay(context: Context, attrs: AttributeSet?) :
     }
 
     /**
-     * Never dispatch touch events to children (ScrollView) and never consume them.
-     * This forces all touches to fall through to the [StepperOverlay] sibling below,
-     * which handles single-tap (toggle overlay) and double-tap (seek) gestures.
+     * Never dispatch touch events to children (ScrollView) and never consume them. This forces all
+     * touches to fall through to the [StepperOverlay] sibling below, which handles single-tap
+     * (toggle overlay) and double-tap (seek) gestures.
      */
     override fun dispatchTouchEvent(event: MotionEvent): Boolean = false
 
     /**
      * Bind a new [AudioInfo] snapshot to the overlay. Updates all 9 value TextViews.
      *
-     * @param info The new audio info to display. Never null (callers should pass the
-     *   "empty" instance from [AudioInfo.from] with a null snapshot when no track is loaded).
+     * @param info The new audio info to display. Never null (callers should pass the "empty"
+     *   instance from [AudioInfo.from] with a null snapshot when no track is loaded).
      */
     fun bind(info: AudioInfo) {
         decoderInfoValue.text = info.decoderInfo

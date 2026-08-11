@@ -15,7 +15,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-
+ 
 package org.oxycblt.auxio.playback.ui.swiper
 
 import android.view.View
@@ -30,20 +30,18 @@ import org.oxycblt.auxio.util.inflater
 import org.oxycblt.musikr.Song
 
 /**
- * A [FlexibleListAdapter] that hosts [CoverViewHolder]s containing a [Song]'s cover, step
- * gesture overlays, and audio info overlay.
+ * A [FlexibleListAdapter] that hosts [CoverViewHolder]s containing a [Song]'s cover, step gesture
+ * overlays, and audio info overlay.
  *
  * @param listener The [StepperOverlay.Listener] that step gesture events will be forwarded to
- * @param onCoverSingleTap Callback invoked when the user single-taps the album art area.
- *   Used by [org.oxycblt.auxio.playback.PlaybackPanelFragment] to toggle the audio info
- *   overlay visibility.
+ * @param onCoverSingleTap Callback invoked when the user single-taps the album art area. Used by
+ *   [org.oxycblt.auxio.playback.PlaybackPanelFragment] to toggle the audio info overlay visibility.
  * @author Alexander Capehart (OxygenCobalt)
  */
 class CoverPagerAdapter(
     private val listener: StepperOverlay.Listener,
     private val onCoverSingleTap: () -> Unit,
-) :
-    FlexibleListAdapter<Song, CoverViewHolder>(CoverViewHolder.DIFF_CALLBACK) {
+) : FlexibleListAdapter<Song, CoverViewHolder>(CoverViewHolder.DIFF_CALLBACK) {
 
     /** Current audio info to display on all bound holders. Updated via [updateAudioInfo]. */
     private var currentAudioInfo: AudioInfo? = null
@@ -65,8 +63,8 @@ class CoverPagerAdapter(
 
     /**
      * Update the audio info shown on all currently-bound holders. Called by
-     * [org.oxycblt.auxio.playback.PlaybackPanelFragment] when the polled audio info
-     * changes (every 500ms).
+     * [org.oxycblt.auxio.playback.PlaybackPanelFragment] when the polled audio info changes (every
+     * 500ms).
      */
     fun updateAudioInfo(info: AudioInfo) {
         currentAudioInfo = info
@@ -74,9 +72,8 @@ class CoverPagerAdapter(
     }
 
     /**
-     * Update the visibility of the audio info overlay on all currently-bound holders.
-     * Called by [org.oxycblt.auxio.playback.PlaybackPanelFragment] when the user toggles
-     * the overlay.
+     * Update the visibility of the audio info overlay on all currently-bound holders. Called by
+     * [org.oxycblt.auxio.playback.PlaybackPanelFragment] when the user toggles the overlay.
      */
     fun updateOverlayVisible(visible: Boolean) {
         currentOverlayVisible = visible
@@ -85,8 +82,8 @@ class CoverPagerAdapter(
 }
 
 /**
- * A [RecyclerView.ViewHolder] that displays a [Song]'s cover, step gesture overlays, and
- * audio info overlay.
+ * A [RecyclerView.ViewHolder] that displays a [Song]'s cover, step gesture overlays, and audio info
+ * overlay.
  *
  * @author Alexander Capehart (OxygenCobalt)
  */
@@ -97,10 +94,10 @@ class CoverViewHolder private constructor(private val binding: ItemCoverBinding)
      *
      * @param song The new [Song] to bind.
      * @param listener An [StepperOverlay.Listener] to bind fast seek interactions to.
-     * @param onSingleTap Callback invoked when the user single-taps the album art area
-     *   (used to toggle the audio info overlay).
-     * @param audioInfo The current [AudioInfo] to display in the overlay, or null if no
-     *   info has been loaded yet.
+     * @param onSingleTap Callback invoked when the user single-taps the album art area (used to
+     *   toggle the audio info overlay).
+     * @param audioInfo The current [AudioInfo] to display in the overlay, or null if no info has
+     *   been loaded yet.
      * @param overlayVisible Whether the audio info overlay should be visible.
      */
     fun bind(
@@ -116,8 +113,7 @@ class CoverViewHolder private constructor(private val binding: ItemCoverBinding)
         if (audioInfo != null) {
             binding.coverAudioInfoOverlay.bind(audioInfo)
         }
-        binding.coverAudioInfoOverlay.visibility =
-            if (overlayVisible) View.VISIBLE else View.GONE
+        binding.coverAudioInfoOverlay.visibility = if (overlayVisible) View.VISIBLE else View.GONE
     }
 
     companion object {

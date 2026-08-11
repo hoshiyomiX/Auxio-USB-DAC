@@ -131,12 +131,11 @@ constructor(
     val currentAudioSessionId: Int?
         get() = playbackManager.currentAudioSessionId
 
-    private val _audioInfo = MutableStateFlow(
-        AudioInfo.from(audioInfoProvider.snapshot(), playbackSettings.usbDacMode)
-    )
+    private val _audioInfo =
+        MutableStateFlow(AudioInfo.from(audioInfoProvider.snapshot(), playbackSettings.usbDacMode))
     /**
-     * The current audio pipeline info for the album-art overlay. Updated every 500ms
-     * while a song is loaded, regardless of play/pause state or USB DAC connection state.
+     * The current audio pipeline info for the album-art overlay. Updated every 500ms while a song
+     * is loaded, regardless of play/pause state or USB DAC connection state.
      */
     val audioInfo: StateFlow<AudioInfo> = _audioInfo
 
@@ -235,10 +234,10 @@ constructor(
     }
 
     /**
-     * Start a polling coroutine that refreshes [audioInfo] every 500ms while the
-     * ViewModel is alive. The polling runs regardless of play/pause state so that
-     * the overlay continues to show the last-known pipeline state even when USB DAC
-     * is unplugged mid-playback (per user spec: overlay persists visible).
+     * Start a polling coroutine that refreshes [audioInfo] every 500ms while the ViewModel is
+     * alive. The polling runs regardless of play/pause state so that the overlay continues to show
+     * the last-known pipeline state even when USB DAC is unplugged mid-playback (per user spec:
+     * overlay persists visible).
      */
     private fun startAudioInfoPolling() {
         audioInfoJob?.cancel()

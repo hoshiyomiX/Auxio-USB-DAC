@@ -15,19 +15,18 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-
+ 
 package org.oxycblt.auxio.playback
 
 import com.decent.usbaudio.media3.AudioInfoSnapshot
 
 /**
- * UI-facing representation of the current audio pipeline state, suitable for display
- * in the album-art overlay.
+ * UI-facing representation of the current audio pipeline state, suitable for display in the
+ * album-art overlay.
  *
- * This is a thin wrapper around [AudioInfoSnapshot] that adds an [usbDacModeActive]
- * flag (so the UI can show "USB DAC mode is off" instead of empty fields when the
- * feature is disabled in settings) and provides sensible defaults for null fields
- * (displayed as "—" instead of empty strings).
+ * This is a thin wrapper around [AudioInfoSnapshot] that adds an [usbDacModeActive] flag (so the UI
+ * can show "USB DAC mode is off" instead of empty fields when the feature is disabled in settings)
+ * and provides sensible defaults for null fields (displayed as "—" instead of empty strings).
  *
  * Use [from] to create an instance from the latest snapshot + setting state.
  */
@@ -53,8 +52,8 @@ data class AudioInfo(
     /** Bitrate of the source file (e.g. "1411 kbps (PCM)", "—"). */
     val audioBitInfo: String,
     /**
-     * Whether USB DAC mode is enabled in settings. When false, all fields above
-     * reflect the state of ExoPlayer's default audio sink (i.e., Android's AudioFlinger).
+     * Whether USB DAC mode is enabled in settings. When false, all fields above reflect the state
+     * of ExoPlayer's default audio sink (i.e., Android's AudioFlinger).
      */
     val usbDacModeActive: Boolean,
 ) {
@@ -62,16 +61,16 @@ data class AudioInfo(
         private const val DASH = "—"
 
         /**
-         * Create an [AudioInfo] from the latest [AudioInfoSnapshot] and the current
-         * USB DAC mode setting.
+         * Create an [AudioInfo] from the latest [AudioInfoSnapshot] and the current USB DAC mode
+         * setting.
          *
-         * @param snapshot The latest snapshot from [com.decent.usbaudio.media3.UsbAudioSink],
-         *   or null if the USB DAC sink is not active (e.g., the setting is off or no
-         *   sink has been created yet).
+         * @param snapshot The latest snapshot from [com.decent.usbaudio.media3.UsbAudioSink], or
+         *   null if the USB DAC sink is not active (e.g., the setting is off or no sink has been
+         *   created yet).
          * @param usbDacModeActive Whether USB DAC mode is enabled in settings.
-         * @return An [AudioInfo] instance with all fields populated (never null). When
-         *   [snapshot] is null and [usbDacModeActive] is false, all fields are "—" and
-         *   the overlay effectively shows "USB DAC mode is off".
+         * @return An [AudioInfo] instance with all fields populated (never null). When [snapshot]
+         *   is null and [usbDacModeActive] is false, all fields are "—" and the overlay effectively
+         *   shows "USB DAC mode is off".
          */
         fun from(snapshot: AudioInfoSnapshot?, usbDacModeActive: Boolean): AudioInfo {
             if (snapshot == null) {
@@ -80,7 +79,8 @@ data class AudioInfo(
                     musicFormat = DASH,
                     musicResolution = DASH,
                     engineUsed = if (usbDacModeActive) "None" else "Android (AudioFlinger)",
-                    resamplerStatus = if (usbDacModeActive) "Not applicable" else "Android resampler",
+                    resamplerStatus =
+                        if (usbDacModeActive) "Not applicable" else "Android resampler",
                     passthroughStatus = if (usbDacModeActive) "Off" else "PCM (mixed)",
                     outputChannel = DASH,
                     samplingInfo = DASH,

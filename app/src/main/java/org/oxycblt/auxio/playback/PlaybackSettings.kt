@@ -62,7 +62,10 @@ interface PlaybackSettings : Settings<PlaybackSettings.Listener> {
     val exitOnTaskRemoval: Boolean
     /** Whether USB DAC bit-perfect mode is enabled (bypass Android audio stack). */
     val usbDacMode: Boolean
-    /** Whether the audio info overlay on the album art is currently visible. Persisted across sessions. */
+    /**
+     * Whether the audio info overlay on the album art is currently visible. Persisted across
+     * sessions.
+     */
     var audioInfoOverlayVisible: Boolean
 
     interface Listener {
@@ -151,8 +154,7 @@ class PlaybackSettingsImpl @Inject constructor(@ApplicationContext context: Cont
         get() = sharedPreferences.getBoolean(getString(R.string.set_key_usb_dac_mode), false)
 
     override var audioInfoOverlayVisible: Boolean
-        get() =
-            sharedPreferences.getBoolean(getString(R.string.set_key_audio_info_overlay), true)
+        get() = sharedPreferences.getBoolean(getString(R.string.set_key_audio_info_overlay), true)
         set(value) {
             sharedPreferences.edit {
                 putBoolean(getString(R.string.set_key_audio_info_overlay), value)

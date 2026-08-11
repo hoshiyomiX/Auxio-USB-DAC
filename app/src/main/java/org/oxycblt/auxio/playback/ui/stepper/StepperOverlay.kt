@@ -66,8 +66,8 @@ class StepperOverlay(context: Context, attrs: AttributeSet?) :
 
     /**
      * Optional callback invoked when the user single-taps the album art area. Used by
-     * [org.oxycblt.auxio.playback.ui.swiper.CoverViewHolder] to toggle the audio info
-     * overlay visibility. When null, single taps are ignored (preserving prior behavior).
+     * [org.oxycblt.auxio.playback.ui.swiper.CoverViewHolder] to toggle the audio info overlay
+     * visibility. When null, single taps are ignored (preserving prior behavior).
      */
     var onSingleTap: (() -> Unit)? = null
 

@@ -75,7 +75,8 @@ class PlaybackPanelFragment :
     Toolbar.OnMenuItemClickListener,
     StyledSeekBar.Listener,
     StepperOverlay.Listener {
-    private val coverPagerAdapter = CoverPagerAdapter(this) { playbackModel.toggleAudioInfoOverlay() }
+    private val coverPagerAdapter =
+        CoverPagerAdapter(this) { playbackModel.toggleAudioInfoOverlay() }
     private val playbackModel: PlaybackViewModel by activityViewModels()
     private val detailModel: DetailViewModel by activityViewModels()
     private val listModel: ListViewModel by activityViewModels()
