@@ -56,7 +56,6 @@ class AudioInfoOverlay(context: Context, attrs: AttributeSet?) : ConstraintLayou
 
     private val decoderInfoValue: TextView
     private val musicFormatValue: TextView
-    private val musicResolutionValue: TextView
     private val engineUsedValue: TextView
     private val resamplerStatusValue: TextView
     private val passthroughStatusValue: TextView
@@ -91,7 +90,6 @@ class AudioInfoOverlay(context: Context, attrs: AttributeSet?) : ConstraintLayou
 
         decoderInfoValue = findViewById(R.id.audio_info_decoder_value)
         musicFormatValue = findViewById(R.id.audio_info_format_value)
-        musicResolutionValue = findViewById(R.id.audio_info_resolution_value)
         engineUsedValue = findViewById(R.id.audio_info_engine_value)
         resamplerStatusValue = findViewById(R.id.audio_info_resampler_value)
         passthroughStatusValue = findViewById(R.id.audio_info_passthrough_value)
@@ -128,7 +126,6 @@ class AudioInfoOverlay(context: Context, attrs: AttributeSet?) : ConstraintLayou
     fun bind(info: AudioInfo) {
         decoderInfoValue.text = info.decoderInfo
         musicFormatValue.text = info.musicFormat
-        musicResolutionValue.text = info.musicResolution
         engineUsedValue.text = info.engineUsed
         resamplerStatusValue.text = info.resamplerStatus
         passthroughStatusValue.text = info.passthroughStatus

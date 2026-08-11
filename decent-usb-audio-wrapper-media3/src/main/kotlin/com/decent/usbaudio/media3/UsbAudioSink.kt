@@ -548,8 +548,30 @@ class UsbAudioSink(
         pendingVolume = volume
         if (config.bitPerfectEnabled && usbAudioStream?.isAlive == true) {
             muteDelegateIfNeeded()
+            // Bit-perfect mode: audio bypasses Android's AudioTrack and goes directly
+            // to the USB DAC via isochronous transfers. The muted delegate AudioTrack
+            // is a no-op, so stream volume (e.g. from hardware volume keys or the
+            // system volume slider via VolumeProviderCompat) would otherwise have no
+            // effect on the audible output. Propagate the volume to the USB DAC's
+            // hardware Feature Unit via UAC2 SET_CUR so the user can actually adjust
+            // the loudness. Best-effort: if the DAC lacks a Feature Unit (FU ID = -1)
+            // or the SET_CUR fails, we silently fall back to fixed-volume output
+            // (bit-perfect at full DAC volume). This is acceptable because software
+            // gain on the PCM stream would break the bit-perfect guarantee.
+            try {
+                val ok = usbAudioDevice.setUsbVolume(volume)
+                if (!ok) {
+                    Log.w(TAG, "setVolume($volume): USB DAC hardware volume unavailable — output remains at DAC's current level")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "setVolume($volume): USB DAC hardware volume threw: ${e.message}")
+            }
         } else {
             unmuteDelegateIfNeeded()
+            // Non-bit-perfect path: delegate AudioTrack handles volume normally via
+            // Android's AudioFlinger. No USB DAC volume control needed — the stream
+            // is either routed through AudioFlinger to the speaker/headphones, or the
+            // USB stream is not yet alive (e.g. between tracks, before DAC init).
         }
     }
 
@@ -1109,12 +1131,6 @@ class UsbAudioSink(
         // --- Music format (from file extension) ---
         val musicFormat: String? = path?.let { inferFormatFromPath(it) }
 
-        // --- Music resolution (source bit depth + sample rate) ---
-        val musicResolution: String? = if (currentSampleRate > 0) {
-            val bits = trackBitDepth.takeIf { it > 0 } ?: encodingToBits(currentEncoding)
-            "${bits}-bit / ${formatRate(currentSampleRate)}"
-        } else null
-
         // --- Engine used ---
         val engineUsed: String = when {
             flacEngine?.isRunning == true -> "Native FLAC"
@@ -1170,7 +1186,6 @@ class UsbAudioSink(
         return AudioInfoSnapshot(
             decoderInfo = decoderInfo,
             musicFormat = musicFormat,
-            musicResolution = musicResolution,
             engineUsed = engineUsed,
             resamplerStatus = resamplerStatus,
             passthroughStatus = passthroughStatus,

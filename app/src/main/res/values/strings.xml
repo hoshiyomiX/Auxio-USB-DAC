@@ -326,7 +326,6 @@
     <!-- Audio info overlay labels (shown on top of album art) -->
     <string name="lbl_audio_info_decoder">Decoder</string>
     <string name="lbl_audio_info_format">Format</string>
-    <string name="lbl_audio_info_resolution">Resolution</string>
     <string name="lbl_audio_info_engine">Engine</string>
     <string name="lbl_audio_info_resampler">Resampler</string>
     <string name="lbl_audio_info_passthrough">Passthrough</string>

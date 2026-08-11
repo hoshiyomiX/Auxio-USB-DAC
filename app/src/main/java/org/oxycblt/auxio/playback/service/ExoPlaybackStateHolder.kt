@@ -95,6 +95,24 @@ class ExoPlaybackStateHolder(
     var sessionOngoing = false
         private set
 
+    /**
+     * Apply a linear volume (0..1) to the ExoPlayer. Routes through
+     * [androidx.media3.exoplayer.ExoPlayer.setVolume], which flows to the
+     * [com.decent.usbaudio.media3.UsbAudioSink.setVolume] override when USB DAC
+     * bit-perfect mode is active — propagating the volume to the USB DAC hardware
+     * via UAC2 SET_CUR on the Feature Unit.
+     *
+     * Must be called on the main thread (ExoPlayer requirement). The system
+     * MediaSession volume provider callback already runs on the main thread,
+     * so no extra dispatch is needed for that path.
+     *
+     * @param linear Linear gain in [0.0, 1.0]. Values outside this range are
+     *   clamped by ExoPlayer internally.
+     */
+    fun applyVolume(linear: Float) {
+        player.volume = linear
+    }
+
     fun attach() {
         playbackManager.registerStateHolder(this)
         musicRepository.addUpdateListener(this)

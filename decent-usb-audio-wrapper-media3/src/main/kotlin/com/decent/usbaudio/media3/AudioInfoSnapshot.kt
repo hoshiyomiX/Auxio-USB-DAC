@@ -13,8 +13,6 @@ package com.decent.usbaudio.media3
  *           Null when no track has been configured yet.
  * @property musicFormat Container/codec format of the source file
  *           (e.g. "FLAC", "OGG/Opus", "MP3", "AAC", "WAV"). Null if unknown.
- * @property musicResolution Source bit depth and sample rate as a display string
- *           (e.g. "24-bit / 96 kHz"). Null if not yet configured.
  * @property engineUsed Which engine is currently producing samples
  *           (e.g. "Native FLAC", "Native Opus", "FFmpeg → int",
  *           "ExoPlayer MediaCodec", "None"). Never null.
@@ -35,7 +33,6 @@ package com.decent.usbaudio.media3
 data class AudioInfoSnapshot(
     val decoderInfo: String?,
     val musicFormat: String?,
-    val musicResolution: String?,
     val engineUsed: String,
     val resamplerStatus: String,
     val passthroughStatus: String,

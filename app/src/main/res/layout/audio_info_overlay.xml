@@ -63,34 +63,7 @@
             app:layout_constraintStart_toEndOf="@+id/audio_info_format_label"
             app:layout_constraintTop_toBottomOf="@+id/audio_info_decoder_value" />
 
-        <!-- Row 3: Music resolution -->
-        <TextView
-            android:id="@+id/audio_info_resolution_label"
-            style="@style/TextAppearance.Material3.LabelSmall"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:layout_marginEnd="8dp"
-            android:text="@string/lbl_audio_info_resolution"
-            android:textColor="#B3FFFFFF"
-            app:layout_constraintEnd_toStartOf="@+id/audio_info_resolution_value"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/audio_info_format_value" />
-
-        <TextView
-            android:id="@+id/audio_info_resolution_value"
-            style="@style/TextAppearance.Material3.BodySmall"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:gravity="end"
-            android:text="@string/def_audio_info"
-            android:textColor="#FFFFFFFF"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toEndOf="@+id/audio_info_resolution_label"
-            app:layout_constraintTop_toBottomOf="@+id/audio_info_format_value" />
-
-        <!-- Row 4: Engine used -->
+        <!-- Row 3: Engine used (Resolution removed — already represented by Resampling/Sampling) -->
         <TextView
             android:id="@+id/audio_info_engine_label"
             style="@style/TextAppearance.Material3.LabelSmall"
@@ -102,7 +75,7 @@
             android:textColor="#B3FFFFFF"
             app:layout_constraintEnd_toStartOf="@+id/audio_info_engine_value"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/audio_info_resolution_value" />
+            app:layout_constraintTop_toBottomOf="@+id/audio_info_format_value" />
 
         <TextView
             android:id="@+id/audio_info_engine_value"
@@ -115,7 +88,7 @@
             android:textColor="#FFFFFFFF"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toEndOf="@+id/audio_info_engine_label"
-            app:layout_constraintTop_toBottomOf="@+id/audio_info_resolution_value" />
+            app:layout_constraintTop_toBottomOf="@+id/audio_info_format_value" />
 
         <!-- Row 5: Resampler status -->
         <TextView

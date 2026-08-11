@@ -37,8 +37,6 @@ data class AudioInfo(
     val decoderInfo: String,
     /** Container/codec format of the source file (e.g. "FLAC", "OGG/Opus"). */
     val musicFormat: String,
-    /** Source bit depth + sample rate (e.g. "24-bit / 96 kHz"). */
-    val musicResolution: String,
     /** Which engine is producing samples (e.g. "Native FLAC", "FFmpeg → int"). */
     val engineUsed: String,
     /** Whether resampling is being applied. */
@@ -69,8 +67,12 @@ data class AudioInfo(
          * The [Song] is used as a fallback source for fields that the sink snapshot cannot populate
          * when USB DAC mode is off, when no DAC is plugged in, or when the sink has not yet
          * received a track transition. This prevents the overlay from showing mostly "—" for
-         * decoder/format/resolution/sampling/bitrate whenever the USB DAC pipeline is inactive —
+         * decoder/format/sampling/bitrate whenever the USB DAC pipeline is inactive —
          * which is the common case for users testing the overlay without a DAC attached.
+         *
+         * Note: The overlay no longer has a "Resolution" field — the source sample rate is
+         * already shown by the Sampling field, and the resampling state is shown by the
+         * Resampler field. Resolution was redundant.
          *
          * @param snapshot The latest snapshot from [com.decent.usbaudio.media3.UsbAudioSink], or
          *   null if the USB DAC sink is not active (e.g., the setting is off or no sink has been
@@ -92,7 +94,6 @@ data class AudioInfo(
                 return AudioInfo(
                     decoderInfo = song?.let { deriveDecoderInfo(it, usbDacModeActive) } ?: DASH,
                     musicFormat = song?.let { formatSongFormat(it.format) } ?: DASH,
-                    musicResolution = song?.let { formatSongResolution(it) } ?: DASH,
                     engineUsed = if (usbDacModeActive) "None" else "Android (AudioFlinger)",
                     resamplerStatus =
                         if (usbDacModeActive) "Not applicable" else "Android resampler",
@@ -111,8 +112,6 @@ data class AudioInfo(
                         ?: DASH,
                 musicFormat =
                     snapshot.musicFormat ?: song?.let { formatSongFormat(it.format) } ?: DASH,
-                musicResolution =
-                    snapshot.musicResolution ?: song?.let { formatSongResolution(it) } ?: DASH,
                 engineUsed = snapshot.engineUsed,
                 resamplerStatus = snapshot.resamplerStatus,
                 passthroughStatus = snapshot.passthroughStatus,
@@ -155,13 +154,8 @@ data class AudioInfo(
             }
 
         /**
-         * Format the [Song]'s source resolution. The [Song] model exposes sample rate but not bit
-         * depth, so we show only the sample rate when bit depth is unavailable.
+         * Format the [Song]'s effective sampling info (sample rate only, bit depth unknown).
          */
-        private fun formatSongResolution(song: Song): String =
-            if (song.sampleRateHz > 0) "?-bit / ${formatRate(song.sampleRateHz)}" else DASH
-
-        /** Format the [Song]'s effective sampling info (sample rate only, bit depth unknown). */
         private fun formatSongSampling(song: Song): String =
             if (song.sampleRateHz > 0) "${formatRate(song.sampleRateHz)} / ?-bit" else DASH
 

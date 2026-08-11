@@ -116,6 +116,15 @@ private constructor(
 
     fun attach(): MediaSessionCompat.Token {
         exoHolder.attach()
+        // Wire the volume callback BEFORE sessionHolder.attach() so that when
+        // USB DAC mode is on, the volume provider can immediately route system
+        // volume adjustments (keys + slider + Bluetooth) to ExoPlayer.setVolume,
+        // which flows through UsbAudioSink.setVolume → UsbAudioDevice.setUsbVolume
+        // → UAC2 SET_CUR on the DAC's Feature Unit. Without this, in bit-perfect
+        // mode the system volume controls would have no audible effect because
+        // the audio bypasses Android's AudioFlinger (where STREAM_MUSIC volume is
+        // normally applied).
+        sessionHolder.volumeCallback = { linear -> exoHolder.applyVolume(linear) }
         sessionHolder.attach()
         widgetComponent.attach()
         systemReceiver.attach()

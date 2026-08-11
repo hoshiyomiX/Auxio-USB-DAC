@@ -259,10 +259,12 @@ class UsbAudioDevice private constructor(private val context: Context) {
         connection = conn
         currentDevice = device
 
-        // Auto-detect Clock Source ID and best alt setting from USB descriptors
+        // Auto-detect Clock Source ID, Feature Unit ID, and best alt setting from USB descriptors
         val clockSourceId = parseClockSourceId(conn)
+        val featureUnitId = parseFeatureUnitId(conn)
         val (bestAlt, bestBits) = parseBestAltSetting(conn)
         Log.i(TAG, "Auto-detected: clockSourceId=0x${clockSourceId.toString(16)}, " +
+                "featureUnitId=0x${featureUnitId.toString(16)}, " +
                 "bestAlt=$bestAlt, bestBits=$bestBits")
 
         val info = UsbAudioDeviceInfo(
@@ -275,6 +277,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
                 maxPacketSize = maxPacketSize,
                 altSettingCount = altSettingCount,
                 clockSourceId = clockSourceId,
+                featureUnitId = featureUnitId,
                 bestAltSetting = bestAlt,
                 bestBitDepth = bestBits
         )
@@ -352,6 +355,165 @@ class UsbAudioDevice private constructor(private val context: Context) {
 
         Log.w(TAG, "parseClockSourceId: no CLOCK_SOURCE descriptor found")
         return -1
+    }
+
+    /**
+     * Parse raw USB descriptors to find the UAC2 Feature Unit entity ID.
+     *
+     * The Feature Unit (bDescriptorSubtype = 0x06) exposes volume and mute controls
+     * for each channel. We need its bUnitID to send SET_CUR/GET_CUR control requests
+     * to FU_VOLUME_CONTROL (CS = 0x01) and FU_MUTE_CONTROL (CS = 0x02).
+     *
+     * Scans the AudioControl interface descriptors for a FEATURE_UNIT descriptor
+     * and returns its bUnitID. Most UAC2 DACs expose exactly one Feature Unit;
+     * if multiple are present, we return the first one (typically the master).
+     *
+     * @return Feature Unit entity ID, or -1 if not found.
+     */
+    private fun parseFeatureUnitId(conn: UsbDeviceConnection): Int {
+        val raw = conn.rawDescriptors ?: return -1
+
+        var i = 0
+        var inAudioControl = false
+
+        while (i + 1 < raw.size) {
+            val bLength = raw[i].toInt() and 0xFF
+            if (bLength < 2) break
+            if (i + bLength > raw.size) break
+
+            val bDescriptorType = raw[i + 1].toInt() and 0xFF
+
+            // Interface descriptor (0x04)
+            if (bDescriptorType == 0x04 && bLength >= 9) {
+                val bInterfaceClass = raw[i + 5].toInt() and 0xFF
+                val bInterfaceSubClass = raw[i + 6].toInt() and 0xFF
+                // AudioControl = class 1, subclass 1
+                inAudioControl = (bInterfaceClass == 1 && bInterfaceSubClass == 1)
+            }
+
+            // CS_INTERFACE descriptor (0x24) inside AudioControl
+            if (inAudioControl && bDescriptorType == 0x24 && bLength >= 4) {
+                val bDescriptorSubtype = raw[i + 2].toInt() and 0xFF
+                // FEATURE_UNIT = 0x06
+                if (bDescriptorSubtype == 0x06 && bLength >= 5) {
+                    val bUnitID = raw[i + 3].toInt() and 0xFF
+                    Log.i(TAG, "parseFeatureUnitId: found FEATURE_UNIT bUnitID=0x${bUnitID.toString(16)}")
+                    return bUnitID
+                }
+            }
+
+            i += bLength
+        }
+
+        Log.w(TAG, "parseFeatureUnitId: no FEATURE_UNIT descriptor found — hardware volume control unavailable")
+        return -1
+    }
+
+    /**
+     * Set the USB DAC hardware volume via UAC2 SET_CUR on the Feature Unit volume control.
+     *
+     * UAC2 FU_VOLUME_CONTROL uses a signed 16-bit fixed-point value in 1/256 dB units.
+     * The DAC's actual volume range is hardware-dependent (typically 0 dB to -127 dB),
+     * but the spec reserves 0x0000 for 0 dB (no attenuation) and 0x8000 for -∞ (mute).
+     *
+     * We map the input float (0.0 = silent, 1.0 = max) to a logarithmic dB scale and
+     * convert to the UAC2 signed 16-bit representation:
+     *   - volume = 1.0 → 0 dB (0x0000, no attenuation, full volume)
+     *   - volume = 0.5 → ~-6.02 dB (0xFF0D)
+     *   - volume = 0.0 → mute (0x8000, -∞ dB)
+     *
+     * @param volume Linear gain in [0.0, 1.0]. Values outside this range are clamped.
+     * @return True if the SET_CUR control transfer succeeded, false otherwise (e.g.
+     *   no Feature Unit was parsed from descriptors, USB transfer failed).
+     */
+    fun setUsbVolume(volume: Float): Boolean {
+        val conn = connection ?: return false
+        val fuId = cachedDeviceInfo?.featureUnitId ?: -1
+        if (fuId < 0) {
+            Log.w(TAG, "setUsbVolume: no Feature Unit ID available — hardware volume unsupported")
+            return false
+        }
+
+        val clamped = volume.coerceIn(0f, 1f)
+        val raw16: Short = if (clamped <= 0f) {
+            // Mute: 0x8000 (-∞ dB)
+            (-32768).toShort()
+        } else {
+            // Convert linear gain to dB (logarithmic), then to UAC2 1/256 dB fixed-point.
+            // 20 * log10(volume) gives the dB value; multiply by 256 and round to int.
+            // Clamped to [-32767, 0] to fit signed 16-bit (0x8001..0x0000).
+            val db = 20.0 * Math.log10(clamped.toDouble())
+            val fixed = (db * 256).toInt()
+            val clampedFixed = fixed.coerceIn(-32767, 0)
+            clampedFixed.toShort()
+        }
+
+        // UAC2 SET_CUR for Feature Unit volume control:
+        //   bmRequestType = 0x21 (Host-to-Device, Class, Interface)
+        //   bRequest      = 0x01 (SET_CUR)
+        //   wValue        = (CS << 8) | CN = 0x0100 (FU_VOLUME_CONTROL=0x01, channel 0=master)
+        //   wIndex        = (entityId << 8) | interfaceNumber = (fuId << 8) | 0
+        //   data          = 2-byte LE signed 16-bit volume
+        val data = ByteArray(2)
+        data[0] = (raw16.toInt() and 0xFF).toByte()
+        data[1] = ((raw16.toInt() shr 8) and 0xFF).toByte()
+
+        val wValue = 0x0100  // CS=0x01 (VOLUME_CONTROL), CN=0x00 (master channel)
+        val wIndex = (fuId shl 8) or 0  // entityId << 8 | audioControlInterface(0)
+
+        val ret = conn.controlTransfer(
+                0x21,    // bmRequestType: Host-to-Device, Class, Interface
+                0x01,    // bRequest: SET_CUR
+                wValue,
+                wIndex,
+                data,
+                data.size,
+                500      // timeout ms (shorter than sample rate — volume is non-critical)
+        )
+        if (ret >= 0) {
+            Log.i(TAG, "setUsbVolume($volume → $clamped, raw=0x${(raw16.toInt() and 0xFFFF).toString(16)}): " +
+                    "SUCCESS with featureUnitId=0x${fuId.toString(16)}")
+            return true
+        }
+        Log.w(TAG, "setUsbVolume($volume): SET_CUR failed (ret=$ret) — DAC may not support hardware volume")
+        return false
+    }
+
+    /**
+     * Read the current USB DAC hardware volume via UAC2 GET_CUR on the Feature Unit
+     * volume control. Inverse of [setUsbVolume].
+     *
+     * @return The current volume as a linear gain in [0.0, 1.0], or -1f on error
+     *   (e.g. no Feature Unit, GET_CUR failed).
+     */
+    fun getUsbVolume(): Float {
+        val conn = connection ?: return -1f
+        val fuId = cachedDeviceInfo?.featureUnitId ?: -1
+        if (fuId < 0) return -1f
+
+        val data = ByteArray(2)
+        val wValue = 0x0100
+        val wIndex = (fuId shl 8) or 0
+
+        val ret = conn.controlTransfer(
+                0xA1,    // bmRequestType: Device-to-Host, Class, Interface
+                0x81,    // bRequest: GET_CUR
+                wValue,
+                wIndex,
+                data,
+                data.size,
+                500
+        )
+        if (ret < 2) {
+            Log.w(TAG, "getUsbVolume: GET_CUR failed (ret=$ret)")
+            return -1f
+        }
+        val raw16 = ((data[1].toInt() and 0xFF) shl 8) or (data[0].toInt() and 0xFF)
+        val signed = if (raw16 >= 0x8000) raw16 - 0x10000 else raw16
+        if (signed <= -32768) return 0f  // Mute
+        val db = signed.toDouble() / 256.0
+        val linear = Math.pow(10.0, db / 20.0)
+        return linear.toFloat().coerceIn(0f, 1f)
     }
 
     /**
