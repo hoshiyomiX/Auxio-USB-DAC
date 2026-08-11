@@ -48,7 +48,8 @@ import timber.log.Timber as L
 class UsbDacVolumeProvider(
     private val onVolumeChanged: (Float) -> Unit,
     initialVolume: Float = 1f,
-) : VolumeProviderCompat(
+) :
+    VolumeProviderCompat(
         VOLUME_CONTROL_ABSOLUTE,
         MAX_STEPS,
         (initialVolume.coerceIn(0f, 1f) * MAX_STEPS).toInt().coerceIn(0, MAX_STEPS),
@@ -98,7 +99,9 @@ class UsbDacVolumeProvider(
         onVolumeChanged(linear)
     }
 
-    /** System (or MediaSession) requested an absolute volume. Clamp, update, propagate downstream. */
+    /**
+     * System (or MediaSession) requested an absolute volume. Clamp, update, propagate downstream.
+     */
     override fun onSetVolumeTo(volume: Int, flags: Int) {
         val newStep = volume.coerceIn(0, MAX_STEPS)
         if (newStep > 0) lastNonZeroStep = newStep

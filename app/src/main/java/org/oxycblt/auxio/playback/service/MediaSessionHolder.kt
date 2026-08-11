@@ -46,11 +46,11 @@ import org.oxycblt.auxio.music.resolve
 import org.oxycblt.auxio.music.resolveNames
 import org.oxycblt.auxio.music.service.MediaSessionUID
 import org.oxycblt.auxio.music.service.toMediaDescription
+import org.oxycblt.auxio.playback.PlaybackSettings
 import org.oxycblt.auxio.playback.state.PlaybackStateManager
 import org.oxycblt.auxio.playback.state.Progression
 import org.oxycblt.auxio.playback.state.QueueChange
 import org.oxycblt.auxio.playback.state.RepeatMode
-import org.oxycblt.auxio.playback.PlaybackSettings
 import org.oxycblt.auxio.util.newBroadcastPendingIntent
 import org.oxycblt.auxio.util.newMainPendingIntent
 import org.oxycblt.musikr.MusicParent
@@ -112,8 +112,8 @@ private constructor(
     var volumeCallback: ((Float) -> Unit)? = null
 
     /**
-     * The volume provider currently registered on the MediaSession, if any. Non-null only while
-     * USB DAC mode is active and [attach] has wired up remote playback. Kept as a field so that
+     * The volume provider currently registered on the MediaSession, if any. Non-null only while USB
+     * DAC mode is active and [attach] has wired up remote playback. Kept as a field so that
      * external app-side volume changes can be pushed into the provider via
      * [UsbDacVolumeProvider.updateFromExternal].
      */
