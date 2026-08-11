@@ -75,7 +75,7 @@ class PlaybackPanelFragment :
     Toolbar.OnMenuItemClickListener,
     StyledSeekBar.Listener,
     StepperOverlay.Listener {
-    private val coverPagerAdapter = CoverPagerAdapter(this)
+    private val coverPagerAdapter = CoverPagerAdapter(this) { playbackModel.toggleAudioInfoOverlay() }
     private val playbackModel: PlaybackViewModel by activityViewModels()
     private val detailModel: DetailViewModel by activityViewModels()
     private val listModel: ListViewModel by activityViewModels()
@@ -180,6 +180,8 @@ class PlaybackPanelFragment :
         collectImmediately(playbackModel.isPlaying, ::updatePlaying)
         collectImmediately(playbackModel.isShuffled, ::updateShuffled)
         collectImmediately(playbackModel.pagerQueue, ::updatePager)
+        collectImmediately(playbackModel.audioInfo, ::updateAudioInfo)
+        collectImmediately(playbackModel.overlayVisible, ::updateOverlayVisible)
     }
 
     // FIXME: Old code!! Maybe not necessary anymore?
@@ -388,6 +390,14 @@ class PlaybackPanelFragment :
 
     private fun navigateToCurrentAlbum() {
         playbackModel.song.value?.let { detailModel.showAlbum(it.album) }
+    }
+
+    private fun updateAudioInfo(info: AudioInfo) {
+        coverPagerAdapter.updateAudioInfo(info)
+    }
+
+    private fun updateOverlayVisible(visible: Boolean) {
+        coverPagerAdapter.updateOverlayVisible(visible)
     }
 
     override fun seek(direction: Direction) {

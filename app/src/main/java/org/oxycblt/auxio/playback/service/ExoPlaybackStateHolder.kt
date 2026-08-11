@@ -51,6 +51,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import org.oxycblt.auxio.image.ImageSettings
 import org.oxycblt.auxio.music.MusicRepository
+import org.oxycblt.auxio.playback.AudioInfoProvider
 import org.oxycblt.auxio.playback.PlaybackSettings
 import org.oxycblt.auxio.playback.persist.PersistenceRepository
 import org.oxycblt.auxio.playback.replaygain.ReplayGainAudioProcessor
@@ -657,6 +658,7 @@ class ExoPlaybackStateHolder(
         private val replayGainProcessor: ReplayGainAudioProcessor,
         private val musicRepository: MusicRepository,
         private val imageSettings: ImageSettings,
+        private val audioInfoProvider: AudioInfoProvider,
     ) {
         fun create(): ExoPlaybackStateHolder {
             // Since Auxio is a music player, only specify an audio renderer to save
@@ -731,6 +733,10 @@ class ExoPlaybackStateHolder(
 
             // Attach UsbAudioSink to the player for URI resolution and engine lifecycle
             usbSink?.attachToPlayer(exoPlayer)
+
+            // Expose the sink to the UI layer via AudioInfoProvider so that
+            // PlaybackViewModel can poll audio pipeline state for the album-art overlay.
+            audioInfoProvider.bind(usbSink)
 
             return ExoPlaybackStateHolder(
                 context,

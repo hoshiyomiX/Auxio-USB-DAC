@@ -1074,6 +1074,145 @@ class UsbAudioSink(
         }
     }
 
+    /**
+     * Take a thread-safe snapshot of the current audio pipeline state for UI display.
+     *
+     * This is intended to be polled at a fixed interval (e.g. 500ms) by the UI layer.
+     * All reads happen under the engine lock to prevent tearing when the engine is
+     * being reconfigured mid-track.
+     *
+     * @return An [AudioInfoSnapshot] describing the current decoder, engine, output,
+     *         and bit-perfect state. Never null, but fields may be null/empty when
+     *         no track is loaded or the USB DAC is not active.
+     */
+    @Synchronized
+    fun snapshotAudioInfo(): AudioInfoSnapshot {
+        val path = currentTrackPath
+        val flacEngine = nativeEngine
+        val opusEngine = nativeOpusEngine
+        val stream = usbAudioStream
+        val streamAlive = stream?.isAlive == true
+        val bitPerfectOn = config.bitPerfectEnabled
+
+        // --- Decoder info ---
+        val decoderInfo: String? = when {
+            flacEngine?.isRunning == true -> "Native FLAC (libFLAC)"
+            opusEngine?.isRunning == true -> "Native Opus (libopus)"
+            path == null -> null
+            path.lowercase().endsWith(".flac") && flacEngine == null ->
+                "FFmpeg (float → int)"  // FLAC via FFmpeg fallback (engine failed to start)
+            path.lowercase().endsWith(".opus") && opusEngine == null ->
+                "FFmpeg (float → int)"  // Opus via FFmpeg fallback
+            else -> "FFmpeg (float → int)"  // All non-native formats go through FFmpeg
+        }
+
+        // --- Music format (from file extension) ---
+        val musicFormat: String? = path?.let { inferFormatFromPath(it) }
+
+        // --- Music resolution (source bit depth + sample rate) ---
+        val musicResolution: String? = if (currentSampleRate > 0) {
+            val bits = trackBitDepth.takeIf { it > 0 } ?: encodingToBits(currentEncoding)
+            "${bits}-bit / ${formatRate(currentSampleRate)}"
+        } else null
+
+        // --- Engine used ---
+        val engineUsed: String = when {
+            flacEngine?.isRunning == true -> "Native FLAC"
+            opusEngine?.isRunning == true -> "Native Opus"
+            usbStreamingThread != null -> "FFmpeg → int"
+            streamAlive -> "ExoPlayer pipeline"
+            else -> "None"
+        }
+
+        // --- Resampler status ---
+        val resamplerStatus: String = when {
+            !bitPerfectOn -> "Not applicable"
+            flacEngine?.isRunning == true || opusEngine?.isRunning == true ->
+                "Native (no resampling)"
+            streamAlive -> "Native (no resampling)"  // USB stream matches source
+            else -> "Not applicable"
+        }
+
+        // --- Passthrough status ---
+        val passthroughStatus: String = when {
+            !bitPerfectOn -> "Not applicable"
+            flacEngine?.isRunning == true || opusEngine?.isRunning == true -> "Passthrough"
+            streamAlive -> "PCM (decoded)"
+            else -> "Off"
+        }
+
+        // --- Output channel count ---
+        val outputChannelCount: Int = currentChannelCount
+
+        // --- Sampling info (output rate + bit depth) ---
+        val samplingInfo: String? = if (currentSampleRate > 0) {
+            val bits = trackBitDepth.takeIf { it > 0 } ?: encodingToBits(currentEncoding)
+            "${formatRate(currentSampleRate)} / ${bits}-bit"
+        } else null
+
+        // --- Bit-perfect info ---
+        val bitPerfectInfo: String = when {
+            !bitPerfectOn -> "Off"
+            flacEngine?.isRunning == true || opusEngine?.isRunning == true -> "Bit-perfect"
+            streamAlive -> "PCM (lossless)"
+            else -> "Off"
+        }
+
+        // --- Audio bit info (source bitrate) ---
+        val audioBitInfo: String = if (currentSampleRate > 0 && currentChannelCount > 0) {
+            val bits = trackBitDepth.takeIf { it > 0 } ?: encodingToBits(currentEncoding)
+            if (bits > 0) {
+                val kbps = (currentSampleRate * bits * currentChannelCount) / 1000
+                "${kbps} kbps (PCM)"
+            } else "—"
+        } else "—"
+
+        return AudioInfoSnapshot(
+            decoderInfo = decoderInfo,
+            musicFormat = musicFormat,
+            musicResolution = musicResolution,
+            engineUsed = engineUsed,
+            resamplerStatus = resamplerStatus,
+            passthroughStatus = passthroughStatus,
+            outputChannelCount = outputChannelCount,
+            samplingInfo = samplingInfo,
+            bitPerfectInfo = bitPerfectInfo,
+            audioBitInfo = audioBitInfo,
+        )
+    }
+
+    /** Infer a human-readable format name from the file extension of [path]. */
+    private fun inferFormatFromPath(path: String): String {
+        val lower = path.lowercase()
+        return when {
+            lower.endsWith(".flac") -> "FLAC"
+            lower.endsWith(".opus") -> "OGG/Opus"
+            lower.endsWith(".ogg") -> "OGG"
+            lower.endsWith(".mp3") -> "MP3"
+            lower.endsWith(".m4a") || lower.endsWith(".mp4") || lower.endsWith(".alac") -> "MP4/ALAC"
+            lower.endsWith(".aac") -> "AAC"
+            lower.endsWith(".wav") -> "WAV"
+            else -> "Unknown"
+        }
+    }
+
+    /** Convert a media3 [C] PCM encoding constant to a bit depth (0 if unknown/float). */
+    private fun encodingToBits(encoding: Int): Int = when (encoding) {
+        C.ENCODING_PCM_8BIT -> 8
+        C.ENCODING_PCM_16BIT -> 16
+        C.ENCODING_PCM_24BIT -> 24
+        C.ENCODING_PCM_32BIT -> 32
+        C.ENCODING_PCM_FLOAT -> 32  // Float is stored as 32 bits
+        else -> 0
+    }
+
+    /** Format a sample rate as a human-readable kHz string. */
+    private fun formatRate(hz: Int): String {
+        val khz = hz / 1000.0
+        return if (khz == khz.toLong().toDouble()) "${khz.toLong()} kHz"
+        else "${"%.1f".format(khz)} kHz"
+    }
+
     companion object {
         private const val TAG = "UsbAudioSink"
 

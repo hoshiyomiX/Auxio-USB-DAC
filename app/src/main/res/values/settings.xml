@@ -37,6 +37,7 @@
 
     <!-- USB DAC / Bit-Perfect -->
     <string name="set_key_usb_dac_mode" translatable="false">auxio_usb_dac_mode</string>
+    <string name="set_key_audio_info_overlay" translatable="false">auxio_audio_info_overlay</string>
 
     <string name="set_key_play_in_list_with" translatable="false">auxio_play_in_list_with</string>
     <string name="set_key_play_in_parent_with" translatable="false">auxio_play_in_parent_with</string>

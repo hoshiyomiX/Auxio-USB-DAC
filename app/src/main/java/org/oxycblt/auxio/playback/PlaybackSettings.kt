@@ -62,6 +62,8 @@ interface PlaybackSettings : Settings<PlaybackSettings.Listener> {
     val exitOnTaskRemoval: Boolean
     /** Whether USB DAC bit-perfect mode is enabled (bypass Android audio stack). */
     val usbDacMode: Boolean
+    /** Whether the audio info overlay on the album art is currently visible. Persisted across sessions. */
+    var audioInfoOverlayVisible: Boolean
 
     interface Listener {
         /** Called when one of the ReplayGain configurations have changed. */
@@ -75,6 +77,9 @@ interface PlaybackSettings : Settings<PlaybackSettings.Listener> {
 
         /** Called when [usbDacMode] has changed. */
         fun onUsbDacModeChanged() {}
+
+        /** Called when [audioInfoOverlayVisible] has changed. */
+        fun onAudioInfoOverlayChanged() {}
     }
 }
 
@@ -145,6 +150,16 @@ class PlaybackSettingsImpl @Inject constructor(@ApplicationContext context: Cont
     override val usbDacMode: Boolean
         get() = sharedPreferences.getBoolean(getString(R.string.set_key_usb_dac_mode), false)
 
+    override var audioInfoOverlayVisible: Boolean
+        get() =
+            sharedPreferences.getBoolean(getString(R.string.set_key_audio_info_overlay), true)
+        set(value) {
+            sharedPreferences.edit {
+                putBoolean(getString(R.string.set_key_audio_info_overlay), value)
+                apply()
+            }
+        }
+
     override fun migrate() {
         // MusicMode was converted to PlaySong in 3.2.0
         fun Int.migrateMusicMode() =
@@ -212,6 +227,10 @@ class PlaybackSettingsImpl @Inject constructor(@ApplicationContext context: Cont
             getString(R.string.set_key_usb_dac_mode) -> {
                 L.d("Dispatching USB DAC mode change")
                 listener.onUsbDacModeChanged()
+            }
+            getString(R.string.set_key_audio_info_overlay) -> {
+                L.d("Dispatching audio info overlay change")
+                listener.onAudioInfoOverlayChanged()
             }
         }
     }

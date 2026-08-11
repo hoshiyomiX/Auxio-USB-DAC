@@ -64,6 +64,13 @@ class StepperOverlay(context: Context, attrs: AttributeSet?) :
 
     var listener: Listener? = null
 
+    /**
+     * Optional callback invoked when the user single-taps the album art area. Used by
+     * [org.oxycblt.auxio.playback.ui.swiper.CoverViewHolder] to toggle the audio info
+     * overlay visibility. When null, single taps are ignored (preserving prior behavior).
+     */
+    var onSingleTap: (() -> Unit)? = null
+
     private val alphaSpring = Effect.FAST
 
     private var leftOverlayState: OverlayState = OverlayState.Invisible
@@ -136,7 +143,16 @@ class StepperOverlay(context: Context, attrs: AttributeSet?) :
     override fun onTouchEvent(event: MotionEvent): Boolean =
         gestureDetector.onTouchEvent(event) || super.onTouchEvent(event)
 
-    override fun onSingleTapConfirmed(e: MotionEvent) = false
+    override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+        // If a single-tap callback is registered (audio info overlay toggle), invoke
+        // it and consume the event so it doesn't fall through to other gesture handlers.
+        // When no callback is set, preserve prior behavior (return false = ignored).
+        onSingleTap?.let { callback ->
+            callback()
+            return true
+        }
+        return false
+    }
 
     private fun enter(
         secondsView: SecondsView,

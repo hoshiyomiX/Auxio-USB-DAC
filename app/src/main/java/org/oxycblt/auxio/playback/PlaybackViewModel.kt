@@ -26,6 +26,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.oxycblt.auxio.list.ListSettings
 import org.oxycblt.auxio.list.adapter.UpdateInstructions
@@ -61,8 +62,10 @@ constructor(
     private val playbackSettings: PlaybackSettings,
     private val commandFactory: PlaybackCommand.Factory,
     private val listSettings: ListSettings,
+    private val audioInfoProvider: AudioInfoProvider,
 ) : ViewModel(), PlaybackStateManager.Listener, PlaybackSettings.Listener {
     private var lastPositionJob: Job? = null
+    private var audioInfoJob: Job? = null
 
     private val _song = MutableStateFlow<Song?>(null)
     /** The currently playing song. */
@@ -128,14 +131,29 @@ constructor(
     val currentAudioSessionId: Int?
         get() = playbackManager.currentAudioSessionId
 
+    private val _audioInfo = MutableStateFlow(
+        AudioInfo.from(audioInfoProvider.snapshot(), playbackSettings.usbDacMode)
+    )
+    /**
+     * The current audio pipeline info for the album-art overlay. Updated every 500ms
+     * while a song is loaded, regardless of play/pause state or USB DAC connection state.
+     */
+    val audioInfo: StateFlow<AudioInfo> = _audioInfo
+
+    private val _overlayVisible = MutableStateFlow(playbackSettings.audioInfoOverlayVisible)
+    /** Whether the audio info overlay on the album art is currently visible. */
+    val overlayVisible: StateFlow<Boolean> = _overlayVisible
+
     init {
         playbackManager.addListener(this)
         playbackSettings.registerListener(this)
+        startAudioInfoPolling()
     }
 
     override fun onCleared() {
         playbackManager.removeListener(this)
         playbackSettings.unregisterListener(this)
+        audioInfoJob?.cancel()
     }
 
     override fun onIndexMoved(index: Int) {
@@ -210,6 +228,36 @@ constructor(
 
     override fun onBarActionChanged() {
         _currentBarAction.value = playbackSettings.barAction
+    }
+
+    override fun onAudioInfoOverlayChanged() {
+        _overlayVisible.value = playbackSettings.audioInfoOverlayVisible
+    }
+
+    /**
+     * Start a polling coroutine that refreshes [audioInfo] every 500ms while the
+     * ViewModel is alive. The polling runs regardless of play/pause state so that
+     * the overlay continues to show the last-known pipeline state even when USB DAC
+     * is unplugged mid-playback (per user spec: overlay persists visible).
+     */
+    private fun startAudioInfoPolling() {
+        audioInfoJob?.cancel()
+        audioInfoJob =
+            viewModelScope.launch {
+                while (isActive) {
+                    _audioInfo.value =
+                        AudioInfo.from(audioInfoProvider.snapshot(), playbackSettings.usbDacMode)
+                    delay(AUDIO_INFO_POLL_MS)
+                }
+            }
+    }
+
+    /** Toggle the visibility of the audio info overlay on the album art. Persisted to settings. */
+    fun toggleAudioInfoOverlay() {
+        L.d("Toggling audio info overlay visibility")
+        val newValue = !_overlayVisible.value
+        playbackSettings.audioInfoOverlayVisible = newValue
+        _overlayVisible.value = newValue
     }
 
     // --- PLAYING FUNCTIONS ---
@@ -658,6 +706,7 @@ constructor(
 
     private companion object {
         private const val STEP_INCREMENT = 10000 // ms
+        private const val AUDIO_INFO_POLL_MS = 500L
     }
 }
 
