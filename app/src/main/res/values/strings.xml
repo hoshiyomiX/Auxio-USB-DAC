@@ -320,8 +320,8 @@
 
     <!-- USB DAC / Bit-Perfect settings -->
     <string name="set_usb_dac">USB DAC</string>
-    <string name="set_usb_dac_mode">USB DAC mode (Bit-Perfect FLAC)</string>
-    <string name="set_usb_dac_mode_desc">Bypass Android audio framework and send PCM directly to USB DAC via isochronous transfers. True bit-perfect output is achieved for FLAC files decoded by the native engine; other formats (MP3, AAC, OGG, etc.) are decoded by FFmpeg and sent as 32-bit float, which is then converted to integer PCM for the DAC. Requires Android 10+, a USB Audio Class 2.0 DAC, and app restart to take effect.</string>
+    <string name="set_usb_dac_mode">USB DAC mode (Bit-Perfect FLAC/Opus)</string>
+    <string name="set_usb_dac_mode_desc">Bypass Android audio framework and send PCM directly to USB DAC via isochronous transfers. True bit-perfect output is achieved for FLAC files (decoded by the native libFLAC engine) and OGG/Opus files (decoded by the native libopus engine); other formats (MP3, AAC, OGG/Vorbis, etc.) are decoded by FFmpeg and sent as 32-bit float, which is then converted to integer PCM for the DAC. Requires Android 10+, a USB Audio Class 2.0 DAC, the libopus source (run decent-usb-audio-driver/setup.sh before building), and app restart to take effect.</string>
 
     <string name="set_library">Library</string>
     <string name="set_locations">Music sources</string>

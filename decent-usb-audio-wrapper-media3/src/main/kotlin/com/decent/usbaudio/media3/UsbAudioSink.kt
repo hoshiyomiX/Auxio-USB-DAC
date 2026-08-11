@@ -24,6 +24,7 @@ import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.audio.ForwardingAudioSink
 import com.decent.usbaudio.NativeAudioEngine
+import com.decent.usbaudio.NativeOpusEngine
 import com.decent.usbaudio.UsbAudioDevice
 import com.decent.usbaudio.UsbAudioStream
 import java.io.File
@@ -103,14 +104,24 @@ class UsbAudioSink(
      *  @return true if an engine was cleaned up (caller should restart playback). */
     private fun cleanupFinishedEngine(): Boolean {
         val engine = nativeEngine
-        if (engine != null && !engine.isRunning) {
-            engine.destroy()
-            nativeEngine = null
+        val opusEngine = nativeOpusEngine
+        val flacFinished = engine != null && !engine.isRunning
+        val opusFinished = opusEngine != null && !opusEngine.isRunning
+        if (flacFinished || opusFinished) {
+            if (flacFinished) {
+                engine!!.destroy()
+                nativeEngine = null
+                Log.i(TAG, "cleanupFinishedEngine: old FLAC engine cleared")
+            }
+            if (opusFinished) {
+                opusEngine!!.destroy()
+                nativeOpusEngine = null
+                Log.i(TAG, "cleanupFinishedEngine: old Opus engine cleared")
+            }
             isNativeEngineActive = false
             activeEnginePath = null
             windowOffsetUs = -1L
             usbStartMediaTimeNeedsInit = true
-            Log.i(TAG, "cleanupFinishedEngine: old engine cleared")
 
             // Apply deferred USB reconfiguration (cross-rate transition)
             if (hasDeferredConfig) {
@@ -126,7 +137,7 @@ class UsbAudioSink(
     /** Creates a native engine if the USB stream is ready and no engine exists.
      *  Replaces the streaming thread fallback if one was set up due to rate mismatch. */
     private fun createEngineIfNeeded() {
-        if (nativeEngine?.isRunning == true) return  // already running
+        if (nativeEngine?.isRunning == true || nativeOpusEngine?.isRunning == true) return  // already running
         val stream = usbAudioStream
         if (stream != null && stream.isAlive) {
             // Clean up dead engine if exists
@@ -136,19 +147,25 @@ class UsbAudioSink(
                 nativeEngine = null
                 activeEnginePath = null
             }
-            if (nativeEngine == null) {
+            val oldOpus = nativeOpusEngine
+            if (oldOpus != null && !oldOpus.isRunning) {
+                oldOpus.destroy()
+                nativeOpusEngine = null
+                activeEnginePath = null
+            }
+            if (nativeEngine == null && nativeOpusEngine == null) {
                 windowOffsetUs = -1L
                 usbStartMediaTimeNeedsInit = true
-                startNativeEngineIfFlac(stream)
+                startNativeEngineIfSupported(stream)
                 // Engine starts paused with engineNeedsInitialSeek = true.
                 // Temporarily unblock LoadControl so ExoPlayer sends at least one
                 // handleBuffer — needed to capture presentationTimeUs and seek.
                 // Without this, the LoadControl blocks immediately and the engine
                 // stays paused forever (HTTP→local transition race).
-                if (nativeEngine != null) {
+                if (nativeEngine != null || nativeOpusEngine != null) {
                     isNativeEngineActive = false
                 }
-                Log.i(TAG, "createEngineIfNeeded: engine=${nativeEngine != null}")
+                Log.i(TAG, "createEngineIfNeeded: flacEngine=${nativeEngine != null} opusEngine=${nativeOpusEngine != null}")
             }
         }
     }
@@ -157,6 +174,10 @@ class UsbAudioSink(
     private val usbAudioDevice = UsbAudioDevice.getInstance(context)
     private var usbStreamingThread: UsbStreamingThread? = null
     private var nativeEngine: NativeAudioEngine? = null
+    /** Native Opus engine for `.opus` / `.ogg`-with-Opus files. Null when not active.
+     *  Path C of the bit-perfect implementation: bypasses FFmpeg's float pipeline
+     *  by using libopus directly (int16 PCM output, losslessly padded to DAC bit depth). */
+    private var nativeOpusEngine: NativeOpusEngine? = null
     private val engineLock = Any()
 
     private var currentEncoding: Int = C.ENCODING_PCM_16BIT
@@ -208,7 +229,7 @@ class UsbAudioSink(
         // If native engine is still playing the SAME track AND the rate didn't change,
         // don't touch it. This happens when ExoPlayer pre-buffers the next track ~10s
         // before EOF. But if the track or rate changed, destroy and reconfigure.
-        if (nativeEngine?.isRunning == true) {
+        if (nativeEngine?.isRunning == true || nativeOpusEngine?.isRunning == true) {
             val trackChanged = currentTrackPath != activeEnginePath
             if (!trackChanged) {
                 // Same track, ExoPlayer pre-buffering — defer reconfiguration
@@ -228,16 +249,23 @@ class UsbAudioSink(
             // Track changed (manual skip) — destroy engine and proceed
             Log.i(TAG, "configure: track changed, destroying engine")
         }
-        // Track changed or engine finished — destroy old engine
+        // Track changed or engine finished — destroy old engines
         val oldEngine = nativeEngine
         if (oldEngine != null) {
             oldEngine.stop()
             oldEngine.destroy()
             nativeEngine = null
-            isNativeEngineActive = false
-            activeEnginePath = null
-            Log.i(TAG, "configure: destroyed old engine")
+            Log.i(TAG, "configure: destroyed old FLAC engine")
         }
+        val oldOpusEngine = nativeOpusEngine
+        if (oldOpusEngine != null) {
+            oldOpusEngine.stop()
+            oldOpusEngine.destroy()
+            nativeOpusEngine = null
+            Log.i(TAG, "configure: destroyed old Opus engine")
+        }
+        isNativeEngineActive = false
+        activeEnginePath = null
 
         handleBufferCallCount = 0
         val sr = inputFormat.sampleRate.takeIf { it > 0 }
@@ -283,8 +311,8 @@ class UsbAudioSink(
 
             // Fallback engine creation: if no engine and no streaming thread,
             // try creating one now (path and USB rate should both be correct by this point)
-            if (nativeEngine == null && usbStreamingThread == null) {
-                startNativeEngineIfFlac(stream)
+            if (nativeEngine == null && nativeOpusEngine == null && usbStreamingThread == null) {
+                startNativeEngineIfSupported(stream)
                 // Engine starts paused. The usbStartMediaTimeNeedsInit block below
                 // will capture presentationTimeUs and seek to the correct position.
             }
@@ -305,26 +333,36 @@ class UsbAudioSink(
                 // After a flush (seek) or initial start, seek the native engine
                 // to the correct position and resume it.
                 val engine = nativeEngine
-                if (engine != null && windowOffsetUs >= 0) {
-                    val flacPositionUs = presentationTimeUs - windowOffsetUs
-                    if (flacPositionUs >= 0) {
-                        engine.seek(flacPositionUs)
-                        if (isPlaying) engine.resume()
-                        engineNeedsInitialSeek = false
-                        Log.i(TAG, "Native engine seek to ${flacPositionUs / 1_000_000}s (playing=$isPlaying)")
+                val opusEngine = nativeOpusEngine
+                if (windowOffsetUs >= 0) {
+                    val enginePositionUs = presentationTimeUs - windowOffsetUs
+                    if (enginePositionUs >= 0) {
+                        if (engine != null) {
+                            engine.seek(enginePositionUs)
+                            if (isPlaying) engine.resume()
+                            engineNeedsInitialSeek = false
+                            Log.i(TAG, "Native FLAC engine seek to ${enginePositionUs / 1_000_000}s (playing=$isPlaying)")
+                        } else if (opusEngine != null) {
+                            opusEngine.seek(enginePositionUs)
+                            if (isPlaying) opusEngine.resume()
+                            engineNeedsInitialSeek = false
+                            Log.i(TAG, "Native Opus engine seek to ${enginePositionUs / 1_000_000}s (playing=$isPlaying)")
+                        }
                     }
                 }
                 // Re-block LoadControl now that we have the position.
                 // flush() temporarily unblocked it to allow this handleBuffer call.
-                if (nativeEngine?.isRunning == true) {
+                if (nativeEngine?.isRunning == true || nativeOpusEngine?.isRunning == true) {
                     isNativeEngineActive = true
                 }
             }
 
-            // Native FLAC engine handles decode+USB directly — ignore ExoPlayer data.
+            // Native engine handles decode+USB directly — ignore ExoPlayer data.
             val engine = nativeEngine
-            if (engine != null) {
-                if (engine.isRunning) {
+            val opusEngine = nativeOpusEngine
+            if (engine != null || opusEngine != null) {
+                val running = (engine?.isRunning == true) || (opusEngine?.isRunning == true)
+                if (running) {
                     buffer.position(buffer.limit())
                     return true
                 }
@@ -332,8 +370,10 @@ class UsbAudioSink(
                 // Lazy creation at the top of handleBuffer will create a new engine
                 // with the correct currentTrackPath on the next call.
                 Log.i(TAG, "Native engine finished — cleaning up for next track")
-                engine.destroy()
+                engine?.destroy()
                 nativeEngine = null
+                opusEngine?.destroy()
+                nativeOpusEngine = null
                 isNativeEngineActive = false
                 activeEnginePath = null
                 windowOffsetUs = -1L
@@ -412,7 +452,7 @@ class UsbAudioSink(
     override fun getCurrentPositionUs(sourceEnded: Boolean): Long {
         if (config.bitPerfectEnabled) {
             val streamAlive = usbAudioStream?.isAlive == true
-            val engine = nativeEngine
+            val engine = nativeEngine ?: nativeOpusEngine
             val engineCreated = engine?.isCreated == true
 
             if (++posLogCount % 500 == 1L) {
@@ -438,7 +478,7 @@ class UsbAudioSink(
                 }
             }
 
-            // Native engine: absolute FLAC position + window offset
+            // Native engine: absolute position + window offset (FLAC or Opus)
             if (streamAlive && engineCreated && windowOffsetUs >= 0) {
                 return windowOffsetUs + engine!!.getPositionUs()
             }
@@ -457,7 +497,7 @@ class UsbAudioSink(
 
     override fun isEnded(): Boolean {
         if (config.bitPerfectEnabled) {
-            val engine = nativeEngine
+            val engine = nativeEngine ?: nativeOpusEngine
             // Engine still running → not ended
             if (engine != null && engine.isRunning) return false
             // Engine exists but stopped → it finished (EOF). Signal ended directly.
@@ -471,7 +511,7 @@ class UsbAudioSink(
     override fun hasPendingData(): Boolean {
         if (config.bitPerfectEnabled) {
             // Engine running → has pending data
-            if (nativeEngine?.isRunning == true) return true
+            if (nativeEngine?.isRunning == true || nativeOpusEngine?.isRunning == true) return true
             if (usbStreamingThread?.hasPendingData() == true) return true
         }
         return super.hasPendingData()
@@ -487,14 +527,19 @@ class UsbAudioSink(
     override fun play() {
         super.play()
         isPlaying = true
-        val resumed = if (!engineNeedsInitialSeek) { nativeEngine?.resume(); true } else false
+        val resumed = if (!engineNeedsInitialSeek) {
+            nativeEngine?.resume(); nativeOpusEngine?.resume(); true
+        } else false
         usbStreamingThread?.resumeStreaming()
         Log.i(TAG, "play() needsSeek=$engineNeedsInitialSeek resumed=$resumed")
     }
 
     override fun pause() {
         isPlaying = false
-        if (!engineNeedsInitialSeek) nativeEngine?.pause()
+        if (!engineNeedsInitialSeek) {
+            nativeEngine?.pause()
+            nativeOpusEngine?.pause()
+        }
         usbStreamingThread?.pauseStreaming()
         super.pause()
     }
@@ -520,7 +565,7 @@ class UsbAudioSink(
         // after seek. handleBuffer will re-block once it captures presentationTimeUs.
         // Without this, the LoadControl blocks ALL post-seek loading and the engine
         // never knows where to seek to.
-        if (nativeEngine?.isRunning == true) {
+        if (nativeEngine?.isRunning == true || nativeOpusEngine?.isRunning == true) {
             isNativeEngineActive = false
         }
     }
@@ -665,62 +710,179 @@ class UsbAudioSink(
         // Try to create engine now (works for first track where onMediaItemTransition
         // fired before configure). For subsequent tracks, createEngineIfNeeded() in
         // onMediaItemTransition handles it (path is correct by then).
-        startNativeEngineIfFlac(stream)
+        startNativeEngineIfSupported(stream)
 
         Log.i(TAG, "USB bit-perfect stream ACTIVE: rate=$sampleRate ch=$channelCount " +
                 "bits=$bitDepth device=${deviceInfo.deviceName}")
     }
 
-    /** Try to start a native FLAC engine. Falls back to ExoPlayer streaming thread. */
+    /** Try to start a native engine (FLAC or Opus) for the current track.
+     *  Falls back to ExoPlayer streaming thread if no native engine applies.
+     *
+     *  Dispatch by file extension:
+     *  - `.flac` → NativeAudioEngine (FLAC parser + bit-perfect decode)
+     *  - `.opus` → NativeOpusEngine (libopus JNI + Ogg demuxer)
+     *  - `.ogg`  → sniff OpusHead magic; if present → NativeOpusEngine,
+     *              else fall through to ExoPlayer (Vorbis/FLAC-in-Ogg handled by FFmpeg)
+     *  - other   → ExoPlayer pipeline (FFmpeg float, NOT bit-perfect)
+     */
     @Synchronized
-    private fun startNativeEngineIfFlac(stream: UsbAudioStream) {
-        if (nativeEngine != null) return  // already created (synchronized method)
+    private fun startNativeEngineIfSupported(stream: UsbAudioStream) {
+        if (nativeEngine != null || nativeOpusEngine != null) return  // already created
 
         // Stop existing streaming thread (mutually exclusive with native engine)
         usbStreamingThread?.stop()
         usbStreamingThread = null
 
         val path = currentTrackPath
-        if (path != null && path.lowercase().endsWith(".flac")) {
-            val engine = NativeAudioEngine()
-            try {
-                val fd = android.os.ParcelFileDescriptor.open(
-                    File(path), android.os.ParcelFileDescriptor.MODE_READ_ONLY
-                )
-                val created = engine.createFromFd(fd.fd, stream.nativeHandle)
-                fd.close()
-                if (created && engine.start()) {
-                    // Verify FLAC sample rate matches USB stream — prevents distortion
-                    // when ExoPlayer's queue and onMediaItemTransition disagree about
-                    // which track is playing (e.g., cross-album Recently Played lists).
-                    if (engine.getSampleRate() != currentSampleRate) {
-                        Log.w(TAG, "Rate mismatch: FLAC=${engine.getSampleRate()} USB=$currentSampleRate" +
-                                " — falling back to ExoPlayer pipeline")
-                        engine.stop()
-                        engine.destroy()
+        if (path != null) {
+            val lower = path.lowercase()
+            when {
+                lower.endsWith(".flac") -> startFlacEngine(stream, path)
+                lower.endsWith(".opus") -> startOpusEngine(stream, path)
+                lower.endsWith(".ogg") -> {
+                    // .ogg may contain Opus, Vorbis, or FLAC. Sniff first ~512 bytes
+                    // for "OpusHead" magic to confirm Opus payload.
+                    if (isOpusPayload(path)) {
+                        startOpusEngine(stream, path)
                     } else {
-                        // Start paused — will resume in handleBuffer after capturing
-                        // the correct seek position from ExoPlayer's presentationTimeUs.
-                        engine.pause()
-                        nativeEngine = engine
-                        isNativeEngineActive = true
-                        engineNeedsInitialSeek = true
-                        engineEndNotified = false
-                        activeEnginePath = path
-                        trackBitDepth = engine.getBitsPerSample()
-                        Log.i(TAG, "Native FLAC engine started (paused, awaiting seek) for: ${File(path).name} ${trackBitDepth}-bit")
-                        return
+                        Log.i(TAG, "Ogg file is not Opus payload, using ExoPlayer: ${File(path).name}")
                     }
                 }
-            } catch (e: Exception) {
-                Log.w(TAG, "Native engine failed: ${e.message}")
+                else -> Log.i(TAG, "Unsupported format for native engine: ${File(path).name}")
             }
-            engine.destroy()
         }
 
-        // Fallback: ExoPlayer pipeline via streaming thread
-        usbStreamingThread = UsbStreamingThread(stream).also { it.start() }
-        Log.i(TAG, "Using ExoPlayer pipeline (non-FLAC or engine failed)")
+        // If no native engine was created, fall back to ExoPlayer streaming thread
+        if (nativeEngine == null && nativeOpusEngine == null && usbStreamingThread == null) {
+            usbStreamingThread = UsbStreamingThread(stream).also { it.start() }
+            Log.i(TAG, "Using ExoPlayer pipeline (no native engine available)")
+        }
+    }
+
+    /** Create and start the native FLAC engine. Sets [nativeEngine] on success. */
+    private fun startFlacEngine(stream: UsbAudioStream, path: String) {
+        val engine = NativeAudioEngine()
+        try {
+            val fd = android.os.ParcelFileDescriptor.open(
+                File(path), android.os.ParcelFileDescriptor.MODE_READ_ONLY
+            )
+            val created = engine.createFromFd(fd.fd, stream.nativeHandle)
+            fd.close()
+            if (created && engine.start()) {
+                // Verify FLAC sample rate matches USB stream — prevents distortion
+                // when ExoPlayer's queue and onMediaItemTransition disagree about
+                // which track is playing (e.g., cross-album Recently Played lists).
+                if (engine.getSampleRate() != currentSampleRate) {
+                    Log.w(TAG, "Rate mismatch: FLAC=${engine.getSampleRate()} USB=$currentSampleRate" +
+                            " — falling back to ExoPlayer pipeline")
+                    engine.stop()
+                    engine.destroy()
+                } else {
+                    // Start paused — will resume in handleBuffer after capturing
+                    // the correct seek position from ExoPlayer's presentationTimeUs.
+                    engine.pause()
+                    nativeEngine = engine
+                    isNativeEngineActive = true
+                    engineNeedsInitialSeek = true
+                    engineEndNotified = false
+                    activeEnginePath = path
+                    trackBitDepth = engine.getBitsPerSample()
+                    Log.i(TAG, "Native FLAC engine started (paused, awaiting seek) for: ${File(path).name} ${trackBitDepth}-bit")
+                    return
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Native FLAC engine failed: ${e.message}")
+        }
+        engine.destroy()
+    }
+
+    /** Create and start the native Opus engine. Sets [nativeOpusEngine] on success.
+     *
+     *  Path C of the bit-perfect implementation: uses libopus directly via JNI to
+     *  decode Ogg/Opus to int16 PCM, bypassing FFmpeg's float pipeline. The int16
+     *  PCM is losslessly padded (left-shift by 16) when the DAC alt setting is
+     *  32-bit, matching the FLAC engine's behavior for 16-bit FLAC files.
+     *
+     *  Fallback conditions (any → ExoPlayer pipeline takes over):
+     *  - libopus native library not built (setup.sh not run) → isAvailable = false
+     *  - File is not a valid Ogg/Opus stream (OpusHead parse fails)
+     *  - Opus sample rate (48kHz) doesn't match USB DAC alt setting
+     *  - Buffer allocation fails
+     */
+    private fun startOpusEngine(stream: UsbAudioStream, path: String) {
+        val probe = NativeOpusEngine()
+        if (!probe.isAvailable) {
+            Log.w(TAG, "Native Opus engine unavailable (libopus not built) — " +
+                    "run decent-usb-audio-driver/setup.sh, then rebuild. " +
+                    "Falling back to ExoPlayer pipeline.")
+            return
+        }
+
+        val engine = NativeOpusEngine()
+        try {
+            val fd = android.os.ParcelFileDescriptor.open(
+                File(path), android.os.ParcelFileDescriptor.MODE_READ_ONLY
+            )
+            val created = engine.createFromFd(fd.fd, stream.nativeHandle)
+            fd.close()
+            if (created && engine.start()) {
+                // Verify Opus sample rate matches USB stream. Opus is always 48kHz
+                // internally; if the DAC alt setting is different (e.g., 44.1kHz),
+                // we fall back to ExoPlayer which will resample.
+                if (engine.getSampleRate() != currentSampleRate) {
+                    Log.w(TAG, "Rate mismatch: Opus=${engine.getSampleRate()} USB=$currentSampleRate" +
+                            " — falling back to ExoPlayer pipeline")
+                    engine.stop()
+                    engine.destroy()
+                } else {
+                    // Start paused — will resume in handleBuffer after capturing
+                    // the correct seek position from ExoPlayer's presentationTimeUs.
+                    engine.pause()
+                    nativeOpusEngine = engine
+                    isNativeEngineActive = true
+                    engineNeedsInitialSeek = true
+                    engineEndNotified = false
+                    activeEnginePath = path
+                    trackBitDepth = engine.getBitsPerSample()  // always 16 for Opus
+                    Log.i(TAG, "Native Opus engine started (paused, awaiting seek) for: ${File(path).name} ${trackBitDepth}-bit")
+                    return
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Native Opus engine failed: ${e.message}")
+        }
+        engine.destroy()
+    }
+
+    /** Sniff first ~512 bytes of an .ogg file for the "OpusHead" magic.
+     *  RFC 7845: the second Ogg page (first audio page after the OggS page) starts
+     *  with "OpusHead" for Opus-in-Ogg streams. Returns false for Vorbis/FLAC-in-Ogg. */
+    private fun isOpusPayload(path: String): Boolean {
+        return try {
+            File(path).inputStream().use { input ->
+                val header = ByteArray(512)
+                val read = input.read(header)
+                if (read < 32) return@use false
+                // Look for "OpusHead" magic anywhere in the first 512 bytes.
+                // It appears at the start of the second Ogg page's first packet
+                // (after the "OggS" page header + segment table).
+                val magic = "OpusHead".toByteArray(Charsets.US_ASCII)
+                // Simple substring search
+                for (i in 0..(read - magic.size)) {
+                    var match = true
+                    for (j in magic.indices) {
+                        if (header[i + j] != magic[j]) { match = false; break }
+                    }
+                    if (match) return@use true
+                }
+                false
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "isOpusPayload: failed to sniff $path: ${e.message}")
+            false
+        }
     }
 
     // ── USB stream release ──────────────────────────────────────────
@@ -735,10 +897,13 @@ class UsbAudioSink(
         // Without this, nativeEngine.stop() deadlocks on pthread_join.
         stream.stop()
 
-        // Now safe to stop native engine (decode thread can exit)
+        // Now safe to stop native engines (decode thread can exit)
         nativeEngine?.stop()
         nativeEngine?.destroy()
         nativeEngine = null
+        nativeOpusEngine?.stop()
+        nativeOpusEngine?.destroy()
+        nativeOpusEngine = null
         isNativeEngineActive = false
 
         // Stop the streaming thread (drains queue, joins thread)
