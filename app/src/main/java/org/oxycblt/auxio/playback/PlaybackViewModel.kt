@@ -132,7 +132,9 @@ constructor(
         get() = playbackManager.currentAudioSessionId
 
     private val _audioInfo =
-        MutableStateFlow(AudioInfo.from(audioInfoProvider.snapshot(), playbackSettings.usbDacMode))
+        MutableStateFlow(
+            AudioInfo.from(audioInfoProvider.snapshot(), playbackSettings.usbDacMode, _song.value)
+        )
     /**
      * The current audio pipeline info for the album-art overlay. Updated every 500ms while a song
      * is loaded, regardless of play/pause state or USB DAC connection state.
@@ -245,7 +247,11 @@ constructor(
             viewModelScope.launch {
                 while (isActive) {
                     _audioInfo.value =
-                        AudioInfo.from(audioInfoProvider.snapshot(), playbackSettings.usbDacMode)
+                        AudioInfo.from(
+                            audioInfoProvider.snapshot(),
+                            playbackSettings.usbDacMode,
+                            _song.value,
+                        )
                     delay(AUDIO_INFO_POLL_MS)
                 }
             }
