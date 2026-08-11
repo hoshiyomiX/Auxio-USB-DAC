@@ -25,6 +25,11 @@ jobs:
         cache: gradle
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
+    - name: Fetch native codec sources (libFLAC + libopus)
+      run: |
+        chmod +x decent-media3-decoder-flac/setup.sh decent-usb-audio-driver/setup.sh
+        ./decent-media3-decoder-flac/setup.sh
+        ./decent-usb-audio-driver/setup.sh
     - name: Build debug APK with Gradle
       run: ./gradlew app:packageDebug
     - name: Upload debug APK artifact
