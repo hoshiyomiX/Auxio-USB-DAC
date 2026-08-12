@@ -1,4 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Audio info overlay layout.
+
+  Field order (top to bottom):
+    1. USB Audio Device  — product name of the connected DAC (or "—" when none).
+    2. Decoder           — active decoder (e.g. "Native FLAC (libFLAC)").
+    3. Playback Engine   — which engine is producing samples.
+    4. Passthrough       — ✓ / ✗ status icon (true bit-perfect passthrough vs decoded/mixed).
+    5. Bit-perfect       — ✓ / ✗ status icon (bit-perfect / lossless-PCM vs converted/off).
+    6. Resampler         — whether resampling is being applied.
+    7. Output            — output channel count (e.g. "Stereo (2)").
+    8. Format            — container/codec format of the source file.
+    9. Bitrate           — source file bitrate.
+   10. Sampling          — effective output sample rate + bit depth.
+
+  Each row is a label (start-aligned, semi-transparent white) + value (end-aligned,
+  full-opacity white). Rows are chained via app:layout_constraintTop_toBottomOf on
+  the previous row's value view so the column flows vertically with consistent 6dp
+  gaps.
+-->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -11,59 +31,59 @@
         android:layout_height="wrap_content"
         android:padding="12dp">
 
-        <!-- Row 1: Decoder info -->
+        <!-- Row 1: USB Audio Device -->
+        <TextView
+            android:id="@+id/audio_info_usb_device_label"
+            style="@style/TextAppearance.Material3.LabelSmall"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="8dp"
+            android:text="@string/lbl_audio_info_usb_device"
+            android:textColor="#B3FFFFFF"
+            app:layout_constraintEnd_toStartOf="@+id/audio_info_usb_device_value"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <TextView
+            android:id="@+id/audio_info_usb_device_value"
+            style="@style/TextAppearance.Material3.BodySmall"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:gravity="end"
+            android:text="@string/def_audio_info"
+            android:textColor="#FFFFFFFF"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toEndOf="@+id/audio_info_usb_device_label"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <!-- Row 2: Decoder -->
         <TextView
             android:id="@+id/audio_info_decoder_label"
             style="@style/TextAppearance.Material3.LabelSmall"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
             android:layout_marginEnd="8dp"
             android:text="@string/lbl_audio_info_decoder"
             android:textColor="#B3FFFFFF"
             app:layout_constraintEnd_toStartOf="@+id/audio_info_decoder_value"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toTopOf="parent" />
+            app:layout_constraintTop_toBottomOf="@+id/audio_info_usb_device_value" />
 
         <TextView
             android:id="@+id/audio_info_decoder_value"
             style="@style/TextAppearance.Material3.BodySmall"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
             android:gravity="end"
             android:text="@string/def_audio_info"
             android:textColor="#FFFFFFFF"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toEndOf="@+id/audio_info_decoder_label"
-            app:layout_constraintTop_toTopOf="parent" />
+            app:layout_constraintTop_toBottomOf="@+id/audio_info_usb_device_value" />
 
-        <!-- Row 2: Music format -->
-        <TextView
-            android:id="@+id/audio_info_format_label"
-            style="@style/TextAppearance.Material3.LabelSmall"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:layout_marginEnd="8dp"
-            android:text="@string/lbl_audio_info_format"
-            android:textColor="#B3FFFFFF"
-            app:layout_constraintEnd_toStartOf="@+id/audio_info_format_value"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/audio_info_decoder_value" />
-
-        <TextView
-            android:id="@+id/audio_info_format_value"
-            style="@style/TextAppearance.Material3.BodySmall"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:gravity="end"
-            android:text="@string/def_audio_info"
-            android:textColor="#FFFFFFFF"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toEndOf="@+id/audio_info_format_label"
-            app:layout_constraintTop_toBottomOf="@+id/audio_info_decoder_value" />
-
-        <!-- Row 3: Engine used (Resolution removed — already represented by Resampling/Sampling) -->
+        <!-- Row 3: Playback Engine -->
         <TextView
             android:id="@+id/audio_info_engine_label"
             style="@style/TextAppearance.Material3.LabelSmall"
@@ -75,7 +95,7 @@
             android:textColor="#B3FFFFFF"
             app:layout_constraintEnd_toStartOf="@+id/audio_info_engine_value"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/audio_info_format_value" />
+            app:layout_constraintTop_toBottomOf="@+id/audio_info_decoder_value" />
 
         <TextView
             android:id="@+id/audio_info_engine_value"
@@ -88,36 +108,9 @@
             android:textColor="#FFFFFFFF"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toEndOf="@+id/audio_info_engine_label"
-            app:layout_constraintTop_toBottomOf="@+id/audio_info_format_value" />
+            app:layout_constraintTop_toBottomOf="@+id/audio_info_decoder_value" />
 
-        <!-- Row 5: Resampler status -->
-        <TextView
-            android:id="@+id/audio_info_resampler_label"
-            style="@style/TextAppearance.Material3.LabelSmall"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:layout_marginEnd="8dp"
-            android:text="@string/lbl_audio_info_resampler"
-            android:textColor="#B3FFFFFF"
-            app:layout_constraintEnd_toStartOf="@+id/audio_info_resampler_value"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/audio_info_engine_value" />
-
-        <TextView
-            android:id="@+id/audio_info_resampler_value"
-            style="@style/TextAppearance.Material3.BodySmall"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:gravity="end"
-            android:text="@string/def_audio_info"
-            android:textColor="#FFFFFFFF"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toEndOf="@+id/audio_info_resampler_label"
-            app:layout_constraintTop_toBottomOf="@+id/audio_info_engine_value" />
-
-        <!-- Row 6: Passthrough status -->
+        <!-- Row 4: Passthrough status (✓ / ✗) -->
         <TextView
             android:id="@+id/audio_info_passthrough_label"
             style="@style/TextAppearance.Material3.LabelSmall"
@@ -129,7 +122,7 @@
             android:textColor="#B3FFFFFF"
             app:layout_constraintEnd_toStartOf="@+id/audio_info_passthrough_value"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/audio_info_resampler_value" />
+            app:layout_constraintTop_toBottomOf="@+id/audio_info_engine_value" />
 
         <TextView
             android:id="@+id/audio_info_passthrough_value"
@@ -142,7 +135,61 @@
             android:textColor="#FFFFFFFF"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toEndOf="@+id/audio_info_passthrough_label"
-            app:layout_constraintTop_toBottomOf="@+id/audio_info_resampler_value" />
+            app:layout_constraintTop_toBottomOf="@+id/audio_info_engine_value" />
+
+        <!-- Row 5: Bit-perfect status (✓ / ✗) -->
+        <TextView
+            android:id="@+id/audio_info_bitperfect_label"
+            style="@style/TextAppearance.Material3.LabelSmall"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:layout_marginEnd="8dp"
+            android:text="@string/lbl_audio_info_bitperfect"
+            android:textColor="#B3FFFFFF"
+            app:layout_constraintEnd_toStartOf="@+id/audio_info_bitperfect_value"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/audio_info_passthrough_value" />
+
+        <TextView
+            android:id="@+id/audio_info_bitperfect_value"
+            style="@style/TextAppearance.Material3.BodySmall"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:gravity="end"
+            android:text="@string/def_audio_info"
+            android:textColor="#FFFFFFFF"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toEndOf="@+id/audio_info_bitperfect_label"
+            app:layout_constraintTop_toBottomOf="@+id/audio_info_passthrough_value" />
+
+        <!-- Row 6: Resampler -->
+        <TextView
+            android:id="@+id/audio_info_resampler_label"
+            style="@style/TextAppearance.Material3.LabelSmall"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:layout_marginEnd="8dp"
+            android:text="@string/lbl_audio_info_resampler"
+            android:textColor="#B3FFFFFF"
+            app:layout_constraintEnd_toStartOf="@+id/audio_info_resampler_value"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/audio_info_bitperfect_value" />
+
+        <TextView
+            android:id="@+id/audio_info_resampler_value"
+            style="@style/TextAppearance.Material3.BodySmall"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:gravity="end"
+            android:text="@string/def_audio_info"
+            android:textColor="#FFFFFFFF"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toEndOf="@+id/audio_info_resampler_label"
+            app:layout_constraintTop_toBottomOf="@+id/audio_info_bitperfect_value" />
 
         <!-- Row 7: Output channel -->
         <TextView
@@ -156,7 +203,7 @@
             android:textColor="#B3FFFFFF"
             app:layout_constraintEnd_toStartOf="@+id/audio_info_channel_value"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/audio_info_passthrough_value" />
+            app:layout_constraintTop_toBottomOf="@+id/audio_info_resampler_value" />
 
         <TextView
             android:id="@+id/audio_info_channel_value"
@@ -169,24 +216,24 @@
             android:textColor="#FFFFFFFF"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toEndOf="@+id/audio_info_channel_label"
-            app:layout_constraintTop_toBottomOf="@+id/audio_info_passthrough_value" />
+            app:layout_constraintTop_toBottomOf="@+id/audio_info_resampler_value" />
 
-        <!-- Row 8: Sampling info -->
+        <!-- Row 8: Format -->
         <TextView
-            android:id="@+id/audio_info_sampling_label"
+            android:id="@+id/audio_info_format_label"
             style="@style/TextAppearance.Material3.LabelSmall"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
             android:layout_marginEnd="8dp"
-            android:text="@string/lbl_audio_info_sampling"
+            android:text="@string/lbl_audio_info_format"
             android:textColor="#B3FFFFFF"
-            app:layout_constraintEnd_toStartOf="@+id/audio_info_sampling_value"
+            app:layout_constraintEnd_toStartOf="@+id/audio_info_format_value"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@+id/audio_info_channel_value" />
 
         <TextView
-            android:id="@+id/audio_info_sampling_value"
+            android:id="@+id/audio_info_format_value"
             style="@style/TextAppearance.Material3.BodySmall"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
@@ -195,37 +242,10 @@
             android:text="@string/def_audio_info"
             android:textColor="#FFFFFFFF"
             app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toEndOf="@+id/audio_info_sampling_label"
+            app:layout_constraintStart_toEndOf="@+id/audio_info_format_label"
             app:layout_constraintTop_toBottomOf="@+id/audio_info_channel_value" />
 
-        <!-- Row 9: Bit-perfect info -->
-        <TextView
-            android:id="@+id/audio_info_bitperfect_label"
-            style="@style/TextAppearance.Material3.LabelSmall"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:layout_marginEnd="8dp"
-            android:text="@string/lbl_audio_info_bitperfect"
-            android:textColor="#B3FFFFFF"
-            app:layout_constraintEnd_toStartOf="@+id/audio_info_bitperfect_value"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/audio_info_sampling_value" />
-
-        <TextView
-            android:id="@+id/audio_info_bitperfect_value"
-            style="@style/TextAppearance.Material3.BodySmall"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:gravity="end"
-            android:text="@string/def_audio_info"
-            android:textColor="#FFFFFFFF"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toEndOf="@+id/audio_info_bitperfect_label"
-            app:layout_constraintTop_toBottomOf="@+id/audio_info_sampling_value" />
-
-        <!-- Row 10: Audio bitrate -->
+        <!-- Row 9: Bitrate -->
         <TextView
             android:id="@+id/audio_info_bitrate_label"
             style="@style/TextAppearance.Material3.LabelSmall"
@@ -237,7 +257,7 @@
             android:textColor="#B3FFFFFF"
             app:layout_constraintEnd_toStartOf="@+id/audio_info_bitrate_value"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/audio_info_bitperfect_value" />
+            app:layout_constraintTop_toBottomOf="@+id/audio_info_format_value" />
 
         <TextView
             android:id="@+id/audio_info_bitrate_value"
@@ -250,7 +270,34 @@
             android:textColor="#FFFFFFFF"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toEndOf="@+id/audio_info_bitrate_label"
-            app:layout_constraintTop_toBottomOf="@+id/audio_info_bitperfect_value" />
+            app:layout_constraintTop_toBottomOf="@+id/audio_info_format_value" />
+
+        <!-- Row 10: Sampling info -->
+        <TextView
+            android:id="@+id/audio_info_sampling_label"
+            style="@style/TextAppearance.Material3.LabelSmall"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:layout_marginEnd="8dp"
+            android:text="@string/lbl_audio_info_sampling"
+            android:textColor="#B3FFFFFF"
+            app:layout_constraintEnd_toStartOf="@+id/audio_info_sampling_value"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/audio_info_bitrate_value" />
+
+        <TextView
+            android:id="@+id/audio_info_sampling_value"
+            style="@style/TextAppearance.Material3.BodySmall"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:gravity="end"
+            android:text="@string/def_audio_info"
+            android:textColor="#FFFFFFFF"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toEndOf="@+id/audio_info_sampling_label"
+            app:layout_constraintTop_toBottomOf="@+id/audio_info_bitrate_value" />
 
     </androidx.constraintlayout.widget.ConstraintLayout>
 </ScrollView>

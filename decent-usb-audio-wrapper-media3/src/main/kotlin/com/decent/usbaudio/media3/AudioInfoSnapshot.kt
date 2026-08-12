@@ -7,6 +7,8 @@ package com.decent.usbaudio.media3
  * interval). All fields are plain JVM types so the DTO can cross module boundaries
  * without dragging in Android or media3 dependencies.
  *
+ * @property usbAudioDeviceName Product name of the connected USB audio DAC
+ *           (e.g. "Topping DX3 Pro+", "iFi Uno"). Null when no USB DAC is open.
  * @property decoderInfo Human-readable description of the active decoder
  *           (e.g. "Native FLAC (libFLAC)", "Native Opus (libopus)",
  *           "FFmpeg (float → int)", "ExoPlayer (MediaCodec)").
@@ -31,6 +33,7 @@ package com.decent.usbaudio.media3
  *           (e.g. "1411 kbps (PCM)", "320 kbps", "—"). Never null.
  */
 data class AudioInfoSnapshot(
+    val usbAudioDeviceName: String?,
     val decoderInfo: String?,
     val musicFormat: String?,
     val engineUsed: String,

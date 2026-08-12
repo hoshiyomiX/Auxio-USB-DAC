@@ -54,15 +54,16 @@ class AudioInfoOverlay(context: Context, attrs: AttributeSet?) : ConstraintLayou
 
     @Inject lateinit var uiSettings: UISettings
 
+    private val usbAudioDeviceValue: TextView
     private val decoderInfoValue: TextView
-    private val musicFormatValue: TextView
     private val engineUsedValue: TextView
-    private val resamplerStatusValue: TextView
     private val passthroughStatusValue: TextView
-    private val outputChannelValue: TextView
-    private val samplingInfoValue: TextView
     private val bitPerfectInfoValue: TextView
+    private val resamplerStatusValue: TextView
+    private val outputChannelValue: TextView
+    private val musicFormatValue: TextView
     private val audioBitInfoValue: TextView
+    private val samplingInfoValue: TextView
 
     init {
         LayoutInflater.from(context).inflate(R.layout.audio_info_overlay, this, true)
@@ -88,15 +89,16 @@ class AudioInfoOverlay(context: Context, attrs: AttributeSet?) : ConstraintLayou
                 }
         }
 
+        usbAudioDeviceValue = findViewById(R.id.audio_info_usb_device_value)
         decoderInfoValue = findViewById(R.id.audio_info_decoder_value)
-        musicFormatValue = findViewById(R.id.audio_info_format_value)
         engineUsedValue = findViewById(R.id.audio_info_engine_value)
-        resamplerStatusValue = findViewById(R.id.audio_info_resampler_value)
         passthroughStatusValue = findViewById(R.id.audio_info_passthrough_value)
-        outputChannelValue = findViewById(R.id.audio_info_channel_value)
-        samplingInfoValue = findViewById(R.id.audio_info_sampling_value)
         bitPerfectInfoValue = findViewById(R.id.audio_info_bitperfect_value)
+        resamplerStatusValue = findViewById(R.id.audio_info_resampler_value)
+        outputChannelValue = findViewById(R.id.audio_info_channel_value)
+        musicFormatValue = findViewById(R.id.audio_info_format_value)
         audioBitInfoValue = findViewById(R.id.audio_info_bitrate_value)
+        samplingInfoValue = findViewById(R.id.audio_info_sampling_value)
 
         // Apply shape clipping so the scrim respects rounded corners
         clipToOutline = true
@@ -118,20 +120,41 @@ class AudioInfoOverlay(context: Context, attrs: AttributeSet?) : ConstraintLayou
     override fun dispatchTouchEvent(event: MotionEvent): Boolean = false
 
     /**
-     * Bind a new [AudioInfo] snapshot to the overlay. Updates all 9 value TextViews.
+     * Bind a new [AudioInfo] snapshot to the overlay. Updates all 10 value TextViews.
+     *
+     * The Passthrough and Bit-perfect fields render as a single glyph (✓ / ✗) — see
+     * [AudioInfo.from] for the conversion rules. Glyph color is tinted here (green for ✓, red for
+     * ✗) so the status is readable at a glance even on a busy album-art background.
      *
      * @param info The new audio info to display. Never null (callers should pass the "empty"
      *   instance from [AudioInfo.from] with a null snapshot when no track is loaded).
      */
     fun bind(info: AudioInfo) {
+        usbAudioDeviceValue.text = info.usbAudioDeviceName
         decoderInfoValue.text = info.decoderInfo
-        musicFormatValue.text = info.musicFormat
         engineUsedValue.text = info.engineUsed
-        resamplerStatusValue.text = info.resamplerStatus
         passthroughStatusValue.text = info.passthroughStatus
-        outputChannelValue.text = info.outputChannel
-        samplingInfoValue.text = info.samplingInfo
         bitPerfectInfoValue.text = info.bitPerfectInfo
+        resamplerStatusValue.text = info.resamplerStatus
+        outputChannelValue.text = info.outputChannel
+        musicFormatValue.text = info.musicFormat
         audioBitInfoValue.text = info.audioBitInfo
+        samplingInfoValue.text = info.samplingInfo
+
+        // Tint the ✓ / ✗ status glyphs so they read as green (active) or red (inactive).
+        // The glyph text is set by [AudioInfo.from]; we only recolor it here based on content.
+        passthroughStatusValue.setTextColor(statusColor(info.passthroughStatus))
+        bitPerfectInfoValue.setTextColor(statusColor(info.bitPerfectInfo))
     }
+
+    /**
+     * Map a status glyph to its display color: green for ✓ (active), red for ✗ (inactive).
+     * Falls back to white for any other text (e.g. the default "—" placeholder).
+     */
+    private fun statusColor(value: String): Int =
+        when (value) {
+            "\u2713" -> 0xFF4CAF50.toInt() // Material Green 500
+            "\u2717" -> 0xFFEF5350.toInt() // Material Red 400
+            else -> 0xFFFFFFFF.toInt()
+        }
 }

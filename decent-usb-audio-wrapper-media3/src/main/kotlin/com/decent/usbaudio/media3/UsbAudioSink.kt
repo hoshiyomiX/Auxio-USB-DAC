@@ -218,6 +218,10 @@ class UsbAudioSink(
 
     private var usbAudioStream: UsbAudioStream? = null
     private val usbAudioDevice = UsbAudioDevice.getInstance(context)
+    /** Product name of the currently-opened USB DAC (e.g. "Topping DX3 Pro+"). Null when no device is open.
+     *  Captured at [configureUsbStream] time from [UsbAudioDeviceInfo.deviceName] and surfaced via
+     *  [snapshotAudioInfo] for the audio info overlay. */
+    private var currentUsbDeviceName: String? = null
     private var usbStreamingThread: UsbStreamingThread? = null
     private var nativeEngine: NativeAudioEngine? = null
     /** Native Opus engine for `.opus` / `.ogg`-with-Opus files. Null when not active.
@@ -682,6 +686,7 @@ class UsbAudioSink(
             Log.e(TAG, "Failed to open USB device")
             return
         }
+        currentUsbDeviceName = deviceInfo.deviceName
 
         // Always use the DAC's highest supported bit depth (standard practice).
         // Sources with lower bit depth are zero-padded in the LSBs.
@@ -959,6 +964,7 @@ class UsbAudioSink(
     private fun releaseUsbStream() {
         val stream = usbAudioStream ?: return
         usbAudioStream = null
+        currentUsbDeviceName = null
 
         // Stop USB stream FIRST — sets ctx->running=false, which unblocks
         // submitPcmToUrbs inside the native engine's decode thread.
@@ -1230,6 +1236,7 @@ class UsbAudioSink(
         } else "—"
 
         return AudioInfoSnapshot(
+            usbAudioDeviceName = currentUsbDeviceName,
             decoderInfo = decoderInfo,
             musicFormat = musicFormat,
             engineUsed = engineUsed,
