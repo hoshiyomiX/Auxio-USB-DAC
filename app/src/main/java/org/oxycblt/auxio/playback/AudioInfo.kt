@@ -46,8 +46,8 @@ data class AudioInfo(
     /** Container/codec format of the source file (e.g. "FLAC", "OGG/Opus"). */
     val musicFormat: String,
     /**
-     * Which engine is producing samples (e.g. "Native FLAC", "FFmpeg → int",
-     * "Android (AudioFlinger)" when playback falls back to the default sink).
+     * Which engine is producing samples (e.g. "Native FLAC", "FFmpeg → int", "Android
+     * (AudioFlinger)" when playback falls back to the default sink).
      */
     val engineUsed: String,
     /** Whether bit-perfect passthrough is active. Rendered as [CHECK] or [CROSS]. */
@@ -85,19 +85,19 @@ data class AudioInfo(
          * The [Song] is used as a fallback source for fields that the sink snapshot cannot populate
          * when USB DAC mode is off, when no DAC is plugged in, or when the sink has not yet
          * received a track transition. This prevents the overlay from showing mostly "—" for
-         * decoder/format/sampling/bitrate whenever the USB DAC pipeline is inactive, which is
-         * the common case for users testing the overlay without a DAC attached.
+         * decoder/format/sampling/bitrate whenever the USB DAC pipeline is inactive, which is the
+         * common case for users testing the overlay without a DAC attached.
          *
          * Passthrough and bit-perfect are normalized to a single glyph ([CHECK] / [CROSS]) here so
          * the overlay can render them as status icons. The conversion rules:
-         *  - Passthrough: [CHECK] only when the snapshot reports true bit-perfect passthrough
-         *    ("Passthrough"); [CROSS] for any decoded/mixed/off path.
-         *  - Bit-perfect: [CHECK] for true bit-perfect ("Bit-perfect") and lossless PCM
-         *    ("PCM (lossless)"); [CROSS] for any converted/off path.
+         * - Passthrough: [CHECK] only when the snapshot reports true bit-perfect passthrough
+         *   ("Passthrough"); [CROSS] for any decoded/mixed/off path.
+         * - Bit-perfect: [CHECK] for true bit-perfect ("Bit-perfect") and lossless PCM ("PCM
+         *   (lossless)"); [CROSS] for any converted/off path.
          *
-         * Note: The overlay no longer has a "Resolution" field — the source sample rate is
-         * already shown by the Sampling field, and the resampling state is shown by the
-         * Resampler field. Resolution was redundant.
+         * Note: The overlay no longer has a "Resolution" field — the source sample rate is already
+         * shown by the Sampling field, and the resampling state is shown by the Resampler field.
+         * Resolution was redundant.
          *
          * @param snapshot The latest snapshot from [com.decent.usbaudio.media3.UsbAudioSink], or
          *   null if the USB DAC sink is not active (e.g., the setting is off or no sink has been
@@ -141,8 +141,7 @@ data class AudioInfo(
                         ?: DASH,
                 musicFormat =
                     snapshot.musicFormat ?: song?.let { formatSongFormat(it.format) } ?: DASH,
-                engineUsed =
-                    if (snapshot.engineUsed == "None") DASH else snapshot.engineUsed,
+                engineUsed = if (snapshot.engineUsed == "None") DASH else snapshot.engineUsed,
                 passthroughStatus =
                     if (snapshot.passthroughStatus == "Passthrough") CHECK else CROSS,
                 bitPerfectInfo =
