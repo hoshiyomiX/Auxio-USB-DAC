@@ -123,8 +123,8 @@ class AudioInfoOverlay(context: Context, attrs: AttributeSet?) : ConstraintLayou
      * Bind a new [AudioInfo] snapshot to the overlay. Updates all 10 value TextViews.
      *
      * The Passthrough and Bit-perfect fields render as a single glyph (✓ / ✗) — see
-     * [AudioInfo.from] for the conversion rules. Glyph color is tinted here (green for ✓, red
-     * for ✗) so the status is readable at a glance even on a busy album-art background.
+     * [AudioInfo.from] for the conversion rules. Glyph color is tinted here (green for ✓, red for
+     * ✗) so the status is readable at a glance even on a busy album-art background.
      *
      * @param info The new audio info to display. Never null (callers should pass the "empty"
      *   instance from [AudioInfo.from] with a null snapshot when no track is loaded).

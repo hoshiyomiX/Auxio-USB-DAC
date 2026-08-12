@@ -146,7 +146,8 @@ data class AudioInfo(
                     if (snapshot.passthroughStatus == "Passthrough") CHECK else CROSS,
                 bitPerfectInfo =
                     when (snapshot.bitPerfectInfo) {
-                        "Bit-perfect", "PCM (lossless)" -> CHECK
+                        "Bit-perfect",
+                        "PCM (lossless)" -> CHECK
                         else -> CROSS
                     },
                 resamplerStatus = snapshot.resamplerStatus,
