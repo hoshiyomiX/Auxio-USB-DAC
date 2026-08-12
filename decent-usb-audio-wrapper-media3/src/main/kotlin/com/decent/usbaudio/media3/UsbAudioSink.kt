@@ -339,7 +339,32 @@ class UsbAudioSink(
                 Log.i(TAG, "Delegate configured (muted, routed to speaker)")
                 return
             } else if (device != null) {
-                Log.w(TAG, "USB DAC found but no permission")
+                // USB DAC is plugged in but we don't have permission yet. Request
+                // permission asynchronously; when granted, force a renderer
+                // reconfigure via seekTo(currentPosition) so configure() runs again
+                // and the USB pipeline is set up on the next pass. Without this, the
+                // permission popup only appears when the DAC is physically plugged in
+                // while bit-perfect mode is already ON — toggling bit-perfect ON while
+                // the DAC is already connected would never request permission, leaving
+                // the overlay stuck on "FFmpeg" / blank engine / blank USB device.
+                Log.w(TAG, "USB DAC found but no permission — requesting...")
+                usbAudioDevice.requestPermission(device) { granted ->
+                    if (granted) {
+                        Log.i(TAG, "USB permission granted — forcing reconfigure")
+                        // Post to main thread to avoid re-entrant configure() calls
+                        // if requestPermission invoked the callback synchronously
+                        // (which happens when permission was already granted).
+                        attachedPlayer?.let { player ->
+                            Handler(Looper.getMainLooper()).post {
+                                val pos = player.currentPosition
+                                Log.i(TAG, "Reconfigure seekTo($pos) after permission grant")
+                                player.seekTo(pos)
+                            }
+                        }
+                    } else {
+                        Log.w(TAG, "USB permission denied by user")
+                    }
+                }
             }
         }
 
