@@ -1155,18 +1155,43 @@ class UsbAudioSink(
      * All reads happen under the engine lock to prevent tearing when the engine is
      * being reconfigured mid-track.
      *
+     * Returns null when the USB pipeline is not actually active — i.e., no DAC is open
+     * ([usbAudioStream] is null or dead) AND no native decoder engine is running. In
+     * this state, audio is flowing through Android's default AudioFlinger sink (the
+     * delegate), and a non-null snapshot would report misleading fields: the decoder
+     * would claim "FFmpeg (float → int)" based solely on the file extension (even
+     * though FFmpeg is not feeding any USB stream), the engine would be "None"
+     * (rendered as "—"), and the USB device name would be null ("—").
+     *
+     * By returning null, the caller ([AudioInfoProvider]) will report null to the UI,
+     * which causes [AudioInfo.from] to use its null-snapshot path — correctly showing
+     * "Android (AudioFlinger)" as the engine and "Pending (codec)" as the decoder.
+     * This gives the user an accurate picture: bit-perfect mode is enabled but no DAC
+     * is connected, so audio is going through Android's default pipeline.
+     *
      * @return An [AudioInfoSnapshot] describing the current decoder, engine, output,
-     *         and bit-perfect state. Never null, but fields may be null/empty when
-     *         no track is loaded or the USB DAC is not active.
+     *         and bit-perfect state, or null when the USB pipeline is not active.
      */
     @Synchronized
-    fun snapshotAudioInfo(): AudioInfoSnapshot {
+    fun snapshotAudioInfo(): AudioInfoSnapshot? {
         val path = currentTrackPath
         val flacEngine = nativeEngine
         val opusEngine = nativeOpusEngine
         val stream = usbAudioStream
         val streamAlive = stream?.isAlive == true
         val bitPerfectOn = bitPerfectEnabled
+
+        // If no USB pipeline is actually active (no alive stream AND no running native
+        // engine), audio is going through Android's AudioFlinger. Return null so the
+        // UI layer falls back to the "Android (AudioFlinger)" display path instead of
+        // showing misleading fields (e.g., "FFmpeg (float → int)" decoder when FFmpeg
+        // isn't actually feeding any USB stream, or "—" for engine/device).
+        if (!streamAlive &&
+            flacEngine?.isRunning != true &&
+            opusEngine?.isRunning != true
+        ) {
+            return null
+        }
 
         // --- Decoder info ---
         val decoderInfo: String? = when {

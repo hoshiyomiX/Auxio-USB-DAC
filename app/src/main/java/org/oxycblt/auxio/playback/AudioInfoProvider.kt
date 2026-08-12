@@ -60,7 +60,11 @@ class AudioInfoProvider @Inject constructor() {
      * Take a snapshot of the current audio pipeline state.
      *
      * @return The latest [AudioInfoSnapshot], or null if no sink is bound (USB DAC mode is off, or
-     *   no playback session is active).
+     *   no playback session is active) OR if the sink is bound but the USB pipeline is not actually
+     *   active (e.g., bit-perfect mode is enabled but no DAC is connected, so audio is flowing
+     *   through Android's default AudioFlinger). In the latter case, a null return causes the UI to
+     *   show "Android (AudioFlinger)" instead of misleading fields like "FFmpeg" decoder with blank
+     *   engine/device.
      */
     fun snapshot(): AudioInfoSnapshot? = sinkRef?.snapshotAudioInfo()
 }
