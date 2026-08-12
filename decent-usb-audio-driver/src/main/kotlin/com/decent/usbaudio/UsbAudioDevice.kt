@@ -259,13 +259,25 @@ class UsbAudioDevice private constructor(private val context: Context) {
         connection = conn
         currentDevice = device
 
-        // Auto-detect Clock Source ID, Feature Unit ID, and best alt setting from USB descriptors
+        // Auto-detect Clock Source ID, Feature Unit ID, AudioControl interface number,
+        // and best alt setting from USB descriptors
         val clockSourceId = parseClockSourceId(conn)
-        val featureUnitId = parseFeatureUnitId(conn)
+        val (featureUnitId, audioControlIfaceId) = parseFeatureUnitId(conn)
         val (bestAlt, bestBits) = parseBestAltSetting(conn)
         Log.i(TAG, "Auto-detected: clockSourceId=0x${clockSourceId.toString(16)}, " +
                 "featureUnitId=0x${featureUnitId.toString(16)}, " +
+                "audioControlIface=$audioControlIfaceId, " +
                 "bestAlt=$bestAlt, bestBits=$bestBits")
+
+        // Query the DAC's actual hardware volume range via GET_MIN/GET_MAX.
+        // This prevents sending SET_CUR values outside the DAC's supported range,
+        // which was the root cause of the "0-90% silence, 90-100% max" volume bug.
+        val (volumeMin, volumeMax) = if (featureUnitId >= 0 && audioControlIfaceId >= 0) {
+            queryVolumeRange(conn, featureUnitId, audioControlIfaceId)
+        } else {
+            Log.w(TAG, "Skipping volume range query — no Feature Unit or AudioControl interface")
+            Pair(UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN, UsbAudioDeviceInfo.DEFAULT_VOLUME_MAX)
+        }
 
         val info = UsbAudioDeviceInfo(
                 connection = conn,
@@ -279,7 +291,10 @@ class UsbAudioDevice private constructor(private val context: Context) {
                 clockSourceId = clockSourceId,
                 featureUnitId = featureUnitId,
                 bestAltSetting = bestAlt,
-                bestBitDepth = bestBits
+                bestBitDepth = bestBits,
+                audioControlInterfaceId = if (audioControlIfaceId >= 0) audioControlIfaceId else 0,
+                volumeMin = volumeMin,
+                volumeMax = volumeMax
         )
         cachedDeviceInfo = info
         return info
@@ -358,23 +373,19 @@ class UsbAudioDevice private constructor(private val context: Context) {
     }
 
     /**
-     * Parse raw USB descriptors to find the UAC2 Feature Unit entity ID.
+     * Parse raw USB descriptors to find the UAC2 Feature Unit entity ID AND the AudioControl
+     * interface number. Both are needed for hardware volume control:
+     * - Feature Unit ID → upper byte of wIndex in SET_CUR/GET_CUR
+     * - AudioControl interface number → lower byte of wIndex in SET_CUR/GET_CUR
      *
-     * The Feature Unit (bDescriptorSubtype = 0x06) exposes volume and mute controls
-     * for each channel. We need its bUnitID to send SET_CUR/GET_CUR control requests
-     * to FU_VOLUME_CONTROL (CS = 0x01) and FU_MUTE_CONTROL (CS = 0x02).
-     *
-     * Scans the AudioControl interface descriptors for a FEATURE_UNIT descriptor
-     * and returns its bUnitID. Most UAC2 DACs expose exactly one Feature Unit;
-     * if multiple are present, we return the first one (typically the master).
-     *
-     * @return Feature Unit entity ID, or -1 if not found.
+     * Returns a Pair(featureUnitId, audioControlInterfaceId). Either may be -1 if not found.
      */
-    private fun parseFeatureUnitId(conn: UsbDeviceConnection): Int {
-        val raw = conn.rawDescriptors ?: return -1
+    private fun parseFeatureUnitId(conn: UsbDeviceConnection): Pair<Int, Int> {
+        val raw = conn.rawDescriptors ?: return Pair(-1, -1)
 
         var i = 0
         var inAudioControl = false
+        var audioControlIfaceNum = -1
 
         while (i + 1 < raw.size) {
             val bLength = raw[i].toInt() and 0xFF
@@ -385,10 +396,15 @@ class UsbAudioDevice private constructor(private val context: Context) {
 
             // Interface descriptor (0x04)
             if (bDescriptorType == 0x04 && bLength >= 9) {
+                val bInterfaceNumber = raw[i + 2].toInt() and 0xFF
                 val bInterfaceClass = raw[i + 5].toInt() and 0xFF
                 val bInterfaceSubClass = raw[i + 6].toInt() and 0xFF
                 // AudioControl = class 1, subclass 1
                 inAudioControl = (bInterfaceClass == 1 && bInterfaceSubClass == 1)
+                if (inAudioControl && audioControlIfaceNum < 0) {
+                    audioControlIfaceNum = bInterfaceNumber
+                    Log.i(TAG, "parseFeatureUnitId: AudioControl interface number = $bInterfaceNumber")
+                }
             }
 
             // CS_INTERFACE descriptor (0x24) inside AudioControl
@@ -397,8 +413,9 @@ class UsbAudioDevice private constructor(private val context: Context) {
                 // FEATURE_UNIT = 0x06
                 if (bDescriptorSubtype == 0x06 && bLength >= 5) {
                     val bUnitID = raw[i + 3].toInt() and 0xFF
-                    Log.i(TAG, "parseFeatureUnitId: found FEATURE_UNIT bUnitID=0x${bUnitID.toString(16)}")
-                    return bUnitID
+                    Log.i(TAG, "parseFeatureUnitId: found FEATURE_UNIT bUnitID=0x${bUnitID.toString(16)} " +
+                            "in AudioControl iface=$audioControlIfaceNum")
+                    return Pair(bUnitID, audioControlIfaceNum)
                 }
             }
 
@@ -406,20 +423,97 @@ class UsbAudioDevice private constructor(private val context: Context) {
         }
 
         Log.w(TAG, "parseFeatureUnitId: no FEATURE_UNIT descriptor found — hardware volume control unavailable")
-        return -1
+        return Pair(-1, audioControlIfaceNum)
+    }
+
+    /**
+     * Query the DAC's hardware volume range via UAC2 GET_MIN and GET_MAX on the Feature Unit
+     * volume control. Returns a Pair(min, max) of signed 16-bit values in 1/256 dB.
+     *
+     * If either query fails, returns the safe defaults (min = -60 dB, max = 0 dB) instead of
+     * the full UAC2 range (min = -127.99 dB). This prevents sending SET_CUR values that are
+     * outside the DAC's supported range, which can cause the DAC to mute entirely — the
+     * root cause of the "0-90% = silence, 90-100% = max" volume bug.
+     */
+    private fun queryVolumeRange(conn: UsbDeviceConnection, fuId: Int, ifaceId: Int): Pair<Short, Short> {
+        val wValue = 0x0100  // CS=0x01 (VOLUME_CONTROL), CN=0x00 (master channel)
+        val wIndex = (fuId shl 8) or (ifaceId and 0xFF)
+
+        var minVal: Short = UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN
+        var maxVal: Short = UsbAudioDeviceInfo.DEFAULT_VOLUME_MAX
+
+        // GET_MIN (bRequest = 0x82)
+        val minData = ByteArray(2)
+        val minRet = conn.controlTransfer(
+            0xA1,    // bmRequestType: Device-to-Host, Class, Interface
+            0x82,    // bRequest: GET_MIN
+            wValue, wIndex, minData, minData.size, 500
+        )
+        if (minRet >= 2) {
+            val raw = ((minData[1].toInt() and 0xFF) shl 8) or (minData[0].toInt() and 0xFF)
+            val signed = raw.toShort()
+            // Only use the queried value if it's negative (attenuation). A positive or zero
+            // min would be nonsensical for a volume control — likely a garbled transfer.
+            if (signed <= 0) {
+                // Clamp to 0x8001 (-32767, -127.99 dB) — 0x8000 (-32768) is the UAC2 mute
+                // value and must not be used as the minimum non-mute volume.
+                minVal = if (signed <= -32768) -32767 else signed
+                val db = minVal.toDouble() / 256.0
+                Log.i(TAG, "queryVolumeRange: GET_MIN = $signed → clamped to $minVal " +
+                        "(0x${(minVal.toInt() and 0xFFFF).toString(16)}) = ${"%.2f".format(db)} dB")
+            } else {
+                Log.w(TAG, "queryVolumeRange: GET_MIN returned positive value $signed — using default")
+            }
+        } else {
+            Log.w(TAG, "queryVolumeRange: GET_MIN failed (ret=$minRet) — using default min = -60 dB")
+        }
+
+        // GET_MAX (bRequest = 0x83)
+        val maxData = ByteArray(2)
+        val maxRet = conn.controlTransfer(
+            0xA1,    // bmRequestType: Device-to-Host, Class, Interface
+            0x83,    // bRequest: GET_MAX
+            wValue, wIndex, maxData, maxData.size, 500
+        )
+        if (maxRet >= 2) {
+            val raw = ((maxData[1].toInt() and 0xFF) shl 8) or (maxData[0].toInt() and 0xFF)
+            val signed = raw.toShort()
+            // Max should be >= 0 (0 dB = unity, or positive for gain). Use the queried value.
+            if (signed >= 0) {
+                maxVal = signed
+                val db = signed.toDouble() / 256.0
+                Log.i(TAG, "queryVolumeRange: GET_MAX = $signed (0x${(raw and 0xFFFF).toString(16)}) = ${"%.2f".format(db)} dB")
+            } else {
+                Log.w(TAG, "queryVolumeRange: GET_MAX returned negative value $signed — using default")
+            }
+        } else {
+            Log.w(TAG, "queryVolumeRange: GET_MAX failed (ret=$maxRet) — using default max = 0 dB")
+        }
+
+        Log.i(TAG, "queryVolumeRange: final range = [${minVal}, ${maxVal}] " +
+                "(${"%.2f".format(minVal.toDouble()/256.0)} dB to ${"%.2f".format(maxVal.toDouble()/256.0)} dB)")
+        return Pair(minVal, maxVal)
     }
 
     /**
      * Set the USB DAC hardware volume via UAC2 SET_CUR on the Feature Unit volume control.
      *
      * UAC2 FU_VOLUME_CONTROL uses a signed 16-bit fixed-point value in 1/256 dB units.
-     * The DAC's actual volume range is hardware-dependent (typically 0 dB to -127 dB),
-     * but the spec reserves 0x0000 for 0 dB (no attenuation) and 0x8000 for -∞ (mute).
+     * The DAC's actual volume range is hardware-dependent and is queried at device-open
+     * time via GET_MIN/GET_MAX (stored in [UsbAudioDeviceInfo.volumeMin] and
+     * [UsbAudioDeviceInfo.volumeMax]).
      *
-     * We map the input float (0.0 = silent, 1.0 = max) to a logarithmic dB scale and
-     * convert to the UAC2 signed 16-bit representation:
-     *   - volume = 1.0 → 0 dB (0x0000, no attenuation, full volume)
-     *   - volume = 0.5 → ~-6.02 dB (0xFF0D)
+     * We map the input float (0.0 = silent, 1.0 = max) to a LINEAR-dB scale across the
+     * DAC's actual supported range. A linear-dB mapping gives perceptually uniform steps
+     * (the human ear perceives loudness logarithmically, so equal dB steps = equal
+     * perceptual steps). This is superior to the old `20*log10(volume)` mapping, which:
+     *   (a) assumed the DAC supported the full 0 to -127.99 dB range (most don't), and
+     *   (b) sent SET_CUR values outside the DAC's range, causing it to mute — the root
+     *       cause of the "0-90% silence, 90-100% sudden peak" volume bug.
+     *
+     * Mapping:
+     *   - volume = 1.0 → volumeMax (typically 0 dB = no attenuation = full volume)
+     *   - volume = 0.5 → midpoint between volumeMin and volumeMax (perceptually half)
      *   - volume = 0.0 → mute (0x8000, -∞ dB)
      *
      * @param volume Linear gain in [0.0, 1.0]. Values outside this range are clamped.
@@ -428,7 +522,8 @@ class UsbAudioDevice private constructor(private val context: Context) {
      */
     fun setUsbVolume(volume: Float): Boolean {
         val conn = connection ?: return false
-        val fuId = cachedDeviceInfo?.featureUnitId ?: -1
+        val info = cachedDeviceInfo
+        val fuId = info?.featureUnitId ?: -1
         if (fuId < 0) {
             Log.w(TAG, "setUsbVolume: no Feature Unit ID available — hardware volume unsupported")
             return false
@@ -439,12 +534,18 @@ class UsbAudioDevice private constructor(private val context: Context) {
             // Mute: 0x8000 (-∞ dB)
             (-32768).toShort()
         } else {
-            // Convert linear gain to dB (logarithmic), then to UAC2 1/256 dB fixed-point.
-            // 20 * log10(volume) gives the dB value; multiply by 256 and round to int.
-            // Clamped to [-32767, 0] to fit signed 16-bit (0x8001..0x0000).
-            val db = 20.0 * Math.log10(clamped.toDouble())
-            val fixed = (db * 256).toInt()
-            val clampedFixed = fixed.coerceIn(-32767, 0)
+            // Map linear 0..1 to the DAC's actual [volumeMin, volumeMax] range using a
+            // linear-dB (perceptually linear) curve:
+            //   dbFixed = volumeMax + (volumeMin - volumeMax) * (1 - volume)
+            //   volume = 1.0 → dbFixed = volumeMax (max, typically 0 dB)
+            //   volume = 0.5 → dbFixed = midpoint (perceptually half as loud)
+            //   volume = 0.0 → would be volumeMin, but we handle 0.0 as mute above
+            val minFixed = (info?.volumeMin ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN).toInt()
+            val maxFixed = (info?.volumeMax ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MAX).toInt()
+            val ratio = (1.0 - clamped.toDouble())  // 0.0 at max, 1.0 at min
+            val dbFixed = maxFixed + ((minFixed - maxFixed) * ratio).toInt()
+            // Clamp to the DAC's actual range to be safe
+            val clampedFixed = dbFixed.coerceIn(minFixed, maxFixed)
             clampedFixed.toShort()
         }
 
@@ -452,14 +553,22 @@ class UsbAudioDevice private constructor(private val context: Context) {
         //   bmRequestType = 0x21 (Host-to-Device, Class, Interface)
         //   bRequest      = 0x01 (SET_CUR)
         //   wValue        = (CS << 8) | CN = 0x0100 (FU_VOLUME_CONTROL=0x01, channel 0=master)
-        //   wIndex        = (entityId << 8) | interfaceNumber = (fuId << 8) | 0
+        //   wIndex        = (entityId << 8) | interfaceNumber
         //   data          = 2-byte LE signed 16-bit volume
         val data = ByteArray(2)
         data[0] = (raw16.toInt() and 0xFF).toByte()
         data[1] = ((raw16.toInt() shr 8) and 0xFF).toByte()
 
         val wValue = 0x0100  // CS=0x01 (VOLUME_CONTROL), CN=0x00 (master channel)
-        val wIndex = (fuId shl 8) or 0  // entityId << 8 | audioControlInterface(0)
+        // Use the actual AudioControl interface number (was hardcoded to 0, which caused
+        // SET_CUR to fail on DACs where the AudioControl interface is not 0).
+        val ifaceId = info?.audioControlInterfaceId ?: 0
+        val wIndex = (fuId shl 8) or (ifaceId and 0xFF)
+
+        val dbValue = raw16.toDouble() / 256.0
+        Log.d(TAG, "setUsbVolume: linear=$clamped → dbFixed=$raw16 (${"%.2f".format(dbValue)}" +
+                " dB), range=[${info?.volumeMin}, ${info?.volumeMax}], " +
+                "fuId=0x${fuId.toString(16)}, iface=$ifaceId")
 
         val ret = conn.controlTransfer(
                 0x21,    // bmRequestType: Host-to-Device, Class, Interface
@@ -472,10 +581,11 @@ class UsbAudioDevice private constructor(private val context: Context) {
         )
         if (ret >= 0) {
             Log.i(TAG, "setUsbVolume($volume → $clamped, raw=0x${(raw16.toInt() and 0xFFFF).toString(16)}): " +
-                    "SUCCESS with featureUnitId=0x${fuId.toString(16)}")
+                    "SUCCESS with featureUnitId=0x${fuId.toString(16)}, iface=$ifaceId")
             return true
         }
-        Log.w(TAG, "setUsbVolume($volume): SET_CUR failed (ret=$ret) — DAC may not support hardware volume")
+        Log.w(TAG, "setUsbVolume($volume): SET_CUR failed (ret=$ret) — DAC may not support hardware volume " +
+                "or the value is outside its range")
         return false
     }
 
@@ -488,12 +598,14 @@ class UsbAudioDevice private constructor(private val context: Context) {
      */
     fun getUsbVolume(): Float {
         val conn = connection ?: return -1f
-        val fuId = cachedDeviceInfo?.featureUnitId ?: -1
+        val info = cachedDeviceInfo
+        val fuId = info?.featureUnitId ?: -1
         if (fuId < 0) return -1f
 
         val data = ByteArray(2)
         val wValue = 0x0100
-        val wIndex = (fuId shl 8) or 0
+        val ifaceId = info?.audioControlInterfaceId ?: 0
+        val wIndex = (fuId shl 8) or (ifaceId and 0xFF)
 
         val ret = conn.controlTransfer(
                 0xA1,    // bmRequestType: Device-to-Host, Class, Interface
@@ -510,10 +622,21 @@ class UsbAudioDevice private constructor(private val context: Context) {
         }
         val raw16 = ((data[1].toInt() and 0xFF) shl 8) or (data[0].toInt() and 0xFF)
         val signed = if (raw16 >= 0x8000) raw16 - 0x10000 else raw16
-        if (signed <= -32768) return 0f  // Mute
-        val db = signed.toDouble() / 256.0
-        val linear = Math.pow(10.0, db / 20.0)
-        return linear.toFloat().coerceIn(0f, 1f)
+        if (signed <= -32768) return 0f  // Mute (0x8000)
+
+        // Reverse the linear-dB mapping from setUsbVolume:
+        //   dbFixed = volumeMax + (volumeMin - volumeMax) * (1 - volume)
+        //   → volume = 1 - (dbFixed - volumeMax) / (volumeMin - volumeMax)
+        val minFixed = (info?.volumeMin ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN).toInt()
+        val maxFixed = (info?.volumeMax ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MAX).toInt()
+        val range = minFixed - maxFixed  // negative (min < max in dB)
+        val linear = if (range == 0) {
+            1f  // Degenerate range — no attenuation possible, always max
+        } else {
+            val ratio = (signed - maxFixed).toDouble() / range  // 0.0 at max, 1.0 at min
+            (1.0 - ratio).toFloat().coerceIn(0f, 1f)
+        }
+        return linear
     }
 
     /**
