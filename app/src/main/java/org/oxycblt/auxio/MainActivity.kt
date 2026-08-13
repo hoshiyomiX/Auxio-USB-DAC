@@ -98,11 +98,27 @@ class MainActivity : AppCompatActivity() {
      * Handle USB_DEVICE_ATTACHED intent when a USB DAC is connected. Claims the device immediately
      * to prevent the kernel snd-usb-audio driver from binding to it, enabling bit-perfect output
      * via decent-player driver.
+     *
+     * Auto-enable: If USB DAC mode is currently disabled (user has not toggled it on, or has
+     * toggled it off), this method will automatically set [PlaybackSettings.usbDacMode] to true
+     * before claiming the device. This satisfies the user spec "auto enable toggle + set active if
+     * terdeteksi" — when a DAC is plugged in, the bit-perfect toggle is automatically enabled and
+     * the device is claimed. The setting write fires the existing PlaybackSettings dispatch
+     * pipeline, which invokes onUsbDacModeChanged() on ExoPlaybackStateHolder (flips
+     * UsbAudioSink.bitPerfectEnabled + forces a renderer reconfigure), MediaSessionHolder (swaps
+     * volume provider), and PlaybackViewModel (updates the toolbar toggle icon's checked state).
      */
     private fun handleUsbDeviceAttached(intent: Intent?) {
         if (intent == null) return
-        if (!playbackSettings.usbDacMode) return // Only handle if USB DAC mode enabled
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return // Requires API 29+
+        // Auto-enable bit-perfect mode if a DAC is being plugged in and the user has not
+        // already enabled it. This makes the toggle "just work" when the user connects a DAC
+        // — no manual toggle required. The existing dispatch pipeline handles the actual
+        // audio pipeline switch (ExoPlaybackStateHolder → UsbAudioSink.configure → bit-perfect).
+        if (!playbackSettings.usbDacMode) {
+            L.d("USB DAC attached; auto-enabling bit-perfect mode")
+            playbackSettings.usbDacMode = true
+        }
         UsbAudioPermissionHelper.handleIntent(this, intent)
     }
 

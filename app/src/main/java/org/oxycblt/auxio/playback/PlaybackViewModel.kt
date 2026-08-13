@@ -22,12 +22,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.oxycblt.auxio.list.ListSettings
 import org.oxycblt.auxio.list.adapter.UpdateInstructions
 import org.oxycblt.auxio.playback.state.DeferredPlayback
@@ -63,6 +65,7 @@ constructor(
     private val commandFactory: PlaybackCommand.Factory,
     private val listSettings: ListSettings,
     private val audioInfoProvider: AudioInfoProvider,
+    private val usbDacConnectionMonitor: UsbDacConnectionMonitor,
 ) : ViewModel(), PlaybackStateManager.Listener, PlaybackSettings.Listener {
     private var lastPositionJob: Job? = null
     private var audioInfoJob: Job? = null
@@ -133,7 +136,11 @@ constructor(
 
     private val _audioInfo =
         MutableStateFlow(
-            AudioInfo.from(audioInfoProvider.snapshot(), playbackSettings.usbDacMode, _song.value)
+            AudioInfo.from(
+                runCatching { audioInfoProvider.snapshot() }.getOrNull(),
+                playbackSettings.usbDacMode,
+                _song.value,
+            )
         )
     /**
      * The current audio pipeline info for the album-art overlay. Updated every 500ms while a song
@@ -150,6 +157,16 @@ constructor(
      * Whether USB DAC bit-perfect mode is currently enabled. Drives the player toolbar toggle icon.
      */
     val usbDacMode: StateFlow<Boolean> = _usbDacMode
+
+    /**
+     * Whether a USB Audio Class DAC is currently physically connected to the device. Updated in
+     * real time from system broadcasts by [UsbDacConnectionMonitor]. Drives the gray-out state of
+     * the toolbar toggle (in PlaybackPanelFragment) and the audio settings preference (in
+     * AudioPreferenceFragment). When false, the toggle is disabled and dimmed; when true, the
+     * toggle is enabled and (if the user has not manually disabled it) reflects the current
+     * [usbDacMode] preference.
+     */
+    val usbDacConnected: StateFlow<Boolean> = usbDacConnectionMonitor.usbDacConnected
 
     init {
         playbackManager.addListener(this)
@@ -260,18 +277,25 @@ constructor(
      * alive. The polling runs regardless of play/pause state so that the overlay continues to show
      * the last-known pipeline state even when USB DAC is unplugged mid-playback (per user spec:
      * overlay persists visible).
+     *
+     * The snapshot call is dispatched to [Dispatchers.IO] because the underlying
+     * [com.decent.usbaudio.media3.UsbAudioSink.snapshotAudioInfo] is `@Synchronized` — if the audio
+     * renderer thread is mid-`configure()` when the polling tick fires, the main thread would block
+     * until the lock is released, causing visible jank during fragment transitions (e.g. Settings →
+     * Home back-navigation). Moving the snapshot off the main thread eliminates this contention
+     * source. The [StateFlow] update itself is thread-safe.
      */
     private fun startAudioInfoPolling() {
         audioInfoJob?.cancel()
         audioInfoJob =
             viewModelScope.launch {
                 while (isActive) {
+                    val snapshot =
+                        withContext(Dispatchers.IO) {
+                            runCatching { audioInfoProvider.snapshot() }.getOrNull()
+                        }
                     _audioInfo.value =
-                        AudioInfo.from(
-                            audioInfoProvider.snapshot(),
-                            playbackSettings.usbDacMode,
-                            _song.value,
-                        )
+                        AudioInfo.from(snapshot, playbackSettings.usbDacMode, _song.value)
                     delay(AUDIO_INFO_POLL_MS)
                 }
             }

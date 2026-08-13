@@ -44,10 +44,16 @@ class RootPreferenceFragment : BasePreferenceFragment(R.xml.preferences_root) {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        enterTransition = MaterialFadeThrough()
-        returnTransition = MaterialFadeThrough()
-        exitTransition = MaterialFadeThrough()
-        reenterTransition = MaterialSharedAxis(MaterialSharedAxis.X, false)
+        // Shorter-than-default transition durations to reduce visible "delay" when navigating
+        // back from Settings to Home. The default MaterialFadeThrough duration is 300ms; the
+        // default MaterialSharedAxis is also 300ms. Stacked across RootPreferenceFragment +
+        // MainFragment + child fragments, the back-nav transition window was ~300-600ms, during
+        // which MainFragment's view is being recreated (~36 collectImmediately calls + ViewPager2
+        // re-adapter). Cutting to 150ms keeps the visual cue but reduces perceived lag.
+        enterTransition = MaterialFadeThrough().apply { duration = 150 }
+        returnTransition = MaterialFadeThrough().apply { duration = 150 }
+        exitTransition = MaterialFadeThrough().apply { duration = 150 }
+        reenterTransition = MaterialSharedAxis(MaterialSharedAxis.X, false).apply { duration = 150 }
     }
 
     override fun onOpenDialogPreference(preference: WrappedDialogPreference) {

@@ -101,8 +101,13 @@ class MainFragment :
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enterTransition = MaterialFadeThrough()
-        exitTransition = MaterialFadeThrough()
+        // Shorter-than-default transition durations to reduce visible "delay" when navigating
+        // between Home and Settings. The default MaterialFadeThrough duration is 300ms, which
+        // compounds with the child fragment view recreation (~36 collectImmediately calls +
+        // ViewPager2 re-adapter) to make Settings → Home back-nav feel laggy. Reducing to 150ms
+        // keeps the visual transition but cuts the perceived delay in half.
+        enterTransition = MaterialFadeThrough().apply { duration = 150 }
+        exitTransition = MaterialFadeThrough().apply { duration = 150 }
     }
 
     override fun onCreateBinding(inflater: LayoutInflater) = FragmentMainBinding.inflate(inflater)
@@ -274,6 +279,26 @@ class MainFragment :
         val binding = requireBinding()
         val playbackSheetBehavior =
             binding.playbackSheet.coordinatorLayoutBehavior as PlaybackBottomSheetBehavior
+
+        // Fast path: when no song is loaded and the playback sheet is already hidden, the
+        // expensive ratio/alpha/cornerSize calculations below would all evaluate to no-ops
+        // (every ratio is 0, every alpha is at its default, every corner size is at
+        // normalCornerSize). Skip them and only run the minimal per-frame updates (back
+        // callback + FAB container visibility). This saves ~120 lines of work per frame
+        // during Settings → Home back-navigation when no song is loaded, which is the
+        // user's reported delay scenario. The first-frame FAB setup is handled by
+        // updateFabVisibility() in onBindingCreated, so onPreDraw doesn't need to redo it.
+        if (
+            playbackModel.song.value == null &&
+                playbackSheetBehavior.state == BackportBottomSheetBehavior.STATE_HIDDEN
+        ) {
+            requireNotNull(sheetBackCallback) { "SheetBackPressedCallback was not available" }
+                .invalidateEnabled()
+            binding.mainFabContainer.isVisible =
+                binding.homeNewPlaylistFab.mainFab.isVisible || binding.homeShuffleFab.isVisible
+            return true
+        }
+
         val queueSheetBehavior =
             binding.queueSheet.coordinatorLayoutBehavior as QueueBottomSheetBehavior?
 

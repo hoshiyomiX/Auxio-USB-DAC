@@ -169,7 +169,11 @@ class PlaybackPanelFragment :
         collectImmediately(playbackModel.pagerQueue, ::updatePager)
         collectImmediately(playbackModel.audioInfo, ::updateAudioInfo)
         collectImmediately(playbackModel.overlayVisible, ::updateOverlayVisible)
-        collectImmediately(playbackModel.usbDacMode, ::updateUsbDacToggle)
+        collectImmediately(
+            playbackModel.usbDacMode,
+            playbackModel.usbDacConnected,
+            ::updateUsbDacToggle,
+        )
     }
 
     // FIXME: Old code!! Maybe not necessary anymore?
@@ -378,22 +382,32 @@ class PlaybackPanelFragment :
     }
 
     /**
-     * Reflect the current USB DAC bit-perfect mode in the toolbar toggle icon. When [enabled] is
-     * true, the menu item is checked (selector drawable shows the primary-tinted icon); when false,
-     * it shows the default-tinted icon. The selector drawable [R.drawable.sel_usb_dac_state_24]
-     * handles the icon swap based on the item's checked state.
+     * Reflect the current USB DAC bit-perfect mode and DAC connection state in the toolbar toggle
+     * icon. When [enabled] is true, the menu item is checked (selector drawable shows the
+     * primary-tinted icon); when false, it shows the default-tinted icon. The selector drawable
+     * [R.drawable.sel_usb_dac_state_24] handles the icon swap based on the item's checked state.
+     *
+     * When [connected] is false (no USB DAC physically plugged in), the toggle is disabled and
+     * dimmed (icon alpha 128) so the user can see the bit-perfect option exists but cannot be
+     * activated until a DAC is connected. When [connected] is true, the toggle is enabled and fully
+     * opaque. The [enabled] state (user's bit-perfect preference) is preserved regardless of
+     * [connected] — if the user previously enabled bit-perfect and then unplugged the DAC, the
+     * toggle remains checked but disabled, and will re-activate automatically when the DAC is
+     * reconnected (handled by [MainActivity.handleUsbDeviceAttached] auto-enable logic).
      */
-    private fun updateUsbDacToggle(enabled: Boolean) {
+    private fun updateUsbDacToggle(enabled: Boolean, connected: Boolean) {
         val item =
             requireBinding().playbackToolbar.menu.findItem(R.id.action_toggle_usb_dac) ?: return
         item.isChecked = enabled
+        item.isEnabled = connected
         // Force the icon to refresh from the selector — without this the toolbar may cache
         // the original icon and not pick up the state change immediately.
-        item.icon =
-            androidx.core.content.ContextCompat.getDrawable(
-                requireContext(),
-                if (enabled) R.drawable.ic_usb_dac_on_24 else R.drawable.ic_usb_dac_off_24,
-            )
+        val iconRes = if (enabled) R.drawable.ic_usb_dac_on_24 else R.drawable.ic_usb_dac_off_24
+        val icon = androidx.core.content.ContextCompat.getDrawable(requireContext(), iconRes)
+        // Dim the icon when disabled to visually communicate that the toggle is unavailable.
+        // 255 = fully opaque, 128 = ~50% opacity (standard Material disabled-state alpha).
+        icon?.alpha = if (connected) 255 else 128
+        item.icon = icon
     }
 
     override fun seek(direction: Direction) {
