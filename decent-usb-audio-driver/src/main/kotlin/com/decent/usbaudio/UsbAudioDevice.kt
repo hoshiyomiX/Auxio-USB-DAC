@@ -12,6 +12,7 @@ import android.hardware.usb.UsbInterface
 import android.hardware.usb.UsbManager
 import android.os.Build
 import android.util.Log
+import kotlin.math.sqrt
 
 
 /**
@@ -430,7 +431,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
      * Query the DAC's hardware volume range via UAC2 GET_MIN and GET_MAX on the Feature Unit
      * volume control. Returns a Pair(min, max) of signed 16-bit values in 1/256 dB.
      *
-     * If either query fails, returns the safe defaults (min = -60 dB, max = 0 dB) instead of
+     * If either query fails, returns the safe defaults (min = -50 dB, max = 0 dB) instead of
      * the full UAC2 range (min = -127.99 dB). This prevents sending SET_CUR values that are
      * outside the DAC's supported range, which can cause the DAC to mute entirely — the
      * root cause of the "0-90% = silence, 90-100% = max" volume bug.
@@ -465,7 +466,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
                 Log.w(TAG, "queryVolumeRange: GET_MIN returned positive value $signed — using default")
             }
         } else {
-            Log.w(TAG, "queryVolumeRange: GET_MIN failed (ret=$minRet) — using default min = -60 dB")
+            Log.w(TAG, "queryVolumeRange: GET_MIN failed (ret=$minRet) — using default min = -50 dB")
         }
 
         // GET_MAX (bRequest = 0x83)
@@ -503,18 +504,26 @@ class UsbAudioDevice private constructor(private val context: Context) {
      * time via GET_MIN/GET_MAX (stored in [UsbAudioDeviceInfo.volumeMin] and
      * [UsbAudioDeviceInfo.volumeMax]).
      *
-     * We map the input float (0.0 = silent, 1.0 = max) to a LINEAR-dB scale across the
-     * DAC's actual supported range. A linear-dB mapping gives perceptually uniform steps
-     * (the human ear perceives loudness logarithmically, so equal dB steps = equal
-     * perceptual steps). This is superior to the old `20*log10(volume)` mapping, which:
-     *   (a) assumed the DAC supported the full 0 to -127.99 dB range (most don't), and
-     *   (b) sent SET_CUR values outside the DAC's range, causing it to mute — the root
-     *       cause of the "0-90% silence, 90-100% sudden peak" volume bug.
+     * We map the input float (0.0 = silent, 1.0 = max) to a PERCEPTUAL power curve
+     * before applying a linear-dB scale across the DAC's actual supported range:
      *
-     * Mapping:
-     *   - volume = 1.0 → volumeMax (typically 0 dB = no attenuation = full volume)
-     *   - volume = 0.5 → midpoint between volumeMin and volumeMax (perceptually half)
-     *   - volume = 0.0 → mute (0x8000, -∞ dB)
+     *   warped = sqrt(volume)
+     *   dbFixed = volumeMax + (volumeMin - volumeMax) * (1 - warped)
+     *
+     * The sqrt() warp gives finer control at low slider positions (the user's "below
+     * half = off" complaint) and coarser control at high positions. Without it, the
+     * linear-dB mapping with the default -50 dB range produced:
+     *   - Slider 0-30% → inaudible (-25 to -50 dB, below hearing threshold)
+     *   - Slider 30-50% → barely audible (perceived as "still off")
+     *   - Slider 50-100% → rapidly increasing (perceived as "sudden peak at half")
+     *
+     * With the sqrt() warp:
+     *   - Slider 25% → warped 0.5 → -25 dB (audible)
+     *   - Slider 50% → warped 0.707 → -14.6 dB (moderate)
+     *   - Slider 75% → warped 0.866 → -6.7 dB (loud)
+     *   - Slider 100% → warped 1.0 → 0 dB (max)
+     *
+     * This is the standard "audio taper" curve used by most pro-audio volume sliders.
      *
      * @param volume Linear gain in [0.0, 1.0]. Values outside this range are clamped.
      * @return True if the SET_CUR control transfer succeeded, false otherwise (e.g.
@@ -534,15 +543,17 @@ class UsbAudioDevice private constructor(private val context: Context) {
             // Mute: 0x8000 (-∞ dB)
             (-32768).toShort()
         } else {
-            // Map linear 0..1 to the DAC's actual [volumeMin, volumeMax] range using a
-            // linear-dB (perceptually linear) curve:
-            //   dbFixed = volumeMax + (volumeMin - volumeMax) * (1 - volume)
-            //   volume = 1.0 → dbFixed = volumeMax (max, typically 0 dB)
-            //   volume = 0.5 → dbFixed = midpoint (perceptually half as loud)
-            //   volume = 0.0 → would be volumeMin, but we handle 0.0 as mute above
+            // Apply perceptual sqrt() warp so low slider positions produce audible output
+            // (the linear-dB mapping alone made the bottom 30% of the slider inaudible).
+            val warped = sqrt(clamped.toDouble())
+            // Map warped 0..1 to the DAC's actual [volumeMin, volumeMax] range using a
+            // linear-dB curve across the warped value:
+            //   dbFixed = volumeMax + (volumeMin - volumeMax) * (1 - warped)
+            //   warped = 1.0 → dbFixed = volumeMax (max, typically 0 dB)
+            //   warped = 0.0 → dbFixed = volumeMin (would be mute, but we handle 0.0 above)
             val minFixed = (info?.volumeMin ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN).toInt()
             val maxFixed = (info?.volumeMax ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MAX).toInt()
-            val ratio = (1.0 - clamped.toDouble())  // 0.0 at max, 1.0 at min
+            val ratio = (1.0 - warped)  // 0.0 at max, 1.0 at min
             val dbFixed = maxFixed + ((minFixed - maxFixed) * ratio).toInt()
             // Clamp to the DAC's actual range to be safe
             val clampedFixed = dbFixed.coerceIn(minFixed, maxFixed)
@@ -624,17 +635,22 @@ class UsbAudioDevice private constructor(private val context: Context) {
         val signed = if (raw16 >= 0x8000) raw16 - 0x10000 else raw16
         if (signed <= -32768) return 0f  // Mute (0x8000)
 
-        // Reverse the linear-dB mapping from setUsbVolume:
-        //   dbFixed = volumeMax + (volumeMin - volumeMax) * (1 - volume)
-        //   → volume = 1 - (dbFixed - volumeMax) / (volumeMin - volumeMax)
+        // Reverse the perceptual sqrt() + linear-dB mapping from setUsbVolume:
+        //   warped = sqrt(volume) → volume = warped^2
+        //   dbFixed = volumeMax + (volumeMin - volumeMax) * (1 - warped)
+        //   → warped = 1 - (dbFixed - volumeMax) / (volumeMin - volumeMax)
+        //   → volume = warped^2
         val minFixed = (info?.volumeMin ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN).toInt()
         val maxFixed = (info?.volumeMax ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MAX).toInt()
         val range = minFixed - maxFixed  // negative (min < max in dB)
         val linear = if (range == 0) {
             1f  // Degenerate range — no attenuation possible, always max
         } else {
-            val ratio = (signed - maxFixed).toDouble() / range  // 0.0 at max, 1.0 at min
-            (1.0 - ratio).toFloat().coerceIn(0f, 1f)
+            val warped = (1.0 - (signed - maxFixed).toDouble() / range)
+                .coerceIn(0.0, 1.0)  // 0.0 at min, 1.0 at max
+            // Inverse of sqrt() is squaring — gives the slider position that would
+            // produce this hardware volume level.
+            (warped * warped).toFloat().coerceIn(0f, 1f)
         }
         return linear
     }
