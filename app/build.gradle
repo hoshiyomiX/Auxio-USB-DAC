@@ -1,5 +1,5 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-import com.android.build.api.variant.FilterConfiguration.FilterType as AbiFilterType
+import com.android.build.OutputFile
 
 plugins {
     id "com.android.application"
@@ -95,15 +95,12 @@ android {
     }
 }
 
-// Per-ABI versionCode mapping — uses the modern androidComponents.onVariants API.
-// The legacy android.applicationVariants API was REMOVED in AGP 9.0 (newDsl=true by default),
-// so the legacy `variant.outputs.each { output.versionCodeOverride = ... }` pattern would fail.
-//
-// Each per-ABI APK gets a unique, monotonic versionCode so that the same versionName
-// (e.g. 4.1.5) produces distinct versionCodes per ABI. The universal APK is intentionally
-// NOT overridden — it retains the base versionCode (75), which is the LOWEST, so that
-// (if ever uploaded to Play Store) Play Store prefers per-ABI APKs and only falls back to
-// the universal APK for unsupported CPU types.
+// Per-ABI versionCode mapping — assigns a unique, monotonic versionCode per ABI so
+// the same versionName (e.g. 4.1.5) produces distinct versionCodes per APK.
+// The universal APK is intentionally NOT overridden — it retains the base
+// versionCode (75), which is the LOWEST, so that (if ever uploaded to Play Store)
+// Play Store prefers per-ABI APKs and only falls back to the universal APK for
+// unsupported CPU types.
 //
 // Formula: finalVersionCode = abiCode * 1000 + baseVersionCode
 //   arm64-v8a     → 1 * 1000 + 75 = 1075
@@ -112,22 +109,29 @@ android {
 //   x86_64        → 4 * 1000 + 75 = 4075
 //   universal     → 75  (default, NOT overridden — lowest, Play Store fallback)
 //
+// NOTE on API choice: AGP 9.0 removed the legacy variant API only when newDsl=true.
+// The project does NOT set android.newDsl=false, but the runtime extension is
+// `ApplicationAndroidComponentsExtensionImplCompat` (Compat shim), which exposes
+// `android.applicationVariants` for backward compatibility with Groovy DSL build
+// scripts. The modern `androidComponents.onVariants { ... }` form is Kotlin-DSL
+// only — in Groovy it fails with "Could not find method onVariants() for arguments
+// [closure]" because Gradle 9 removed implicit Closure→Action coercion. Hence we
+// use the legacy Groovy DSL pattern shown in the official docs.
+//
 // Reference: https://developer.android.com/build/configure-apk-splits
-androidComponents {
-    onVariants { variant ->
-        variant.outputs.forEach { output ->
-            // Find the ABI filter on this output (null for the universal APK)
-            def abiFilter = output.filters.find { it.filterType == AbiFilterType.ABI }
-            if (abiFilter != null) {
-                def abiCodes = ['arm64-v8a': 1, 'armeabi-v7a': 2, 'x86': 3, 'x86_64': 4]
-                def baseAbiCode = abiCodes[abiFilter.identifier]
-                if (baseAbiCode != null) {
-                    def baseVersionCode = output.versionCode.get() ?: android.defaultConfig.versionCode
-                    output.versionCode.set(baseAbiCode * 1000 + baseVersionCode)
-                }
+android.applicationVariants.all { variant ->
+    variant.outputs.each { output ->
+        // output.getFilter(OutputFile.ABI) returns the ABI name for per-ABI outputs,
+        // or null for the universal APK (which we want to leave at default versionCode).
+        def abi = output.getFilter(OutputFile.ABI)
+        if (abi != null) {
+            def abiCodes = ['arm64-v8a': 1, 'armeabi-v7a': 2, 'x86': 3, 'x86_64': 4]
+            def baseAbiCode = abiCodes[abi]
+            if (baseAbiCode != null) {
+                output.versionCodeOverride = baseAbiCode * 1000 + variant.versionCode
             }
-            // Universal APK: no override → retains default versionCode (75, lowest)
         }
+        // Universal APK: abi is null → no override → retains default versionCode (75, lowest)
     }
 }
 
