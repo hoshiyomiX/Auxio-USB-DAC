@@ -40,15 +40,41 @@ jobs:
       run: |
         echo "=== Per-ABI APK outputs ==="
         ls -lh app/build/outputs/apk/debug/*.apk || true
-    - name: Upload per-ABI debug APKs
+    # Per-ABI artifacts: each APK is uploaded as a separate downloadable artifact
+    # (not bundled into a single zip). Downloaders can pick the exact APK they need.
+    # Artifact names follow the pattern: Auxio_Canary-<abi>
+    - name: Upload arm64-v8a APK
       uses: actions/upload-artifact@v4
       with:
-        name: Auxio_Canary
-        # Glob uploads all 5 APKs (4 per-ABI + 1 universal) as a single artifact bundle.
-        # Downloaders will receive a zip containing:
-        #   app-arm64-v8a-debug.apk     (modern 64-bit ARM phones)
-        #   app-armeabi-v7a-debug.apk   (legacy 32-bit ARM phones)
-        #   app-x86_64-debug.apk        (emulators / Intel tablets)
-        #   app-x86-debug.apk           (legacy emulators)
-        #   app-universal-debug.apk     (fallback, all ABIs)
-        path: ./app/build/outputs/apk/debug/*.apk
+        name: Auxio_Canary-arm64-v8a
+        path: ./app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
+        if-no-files-found: error
+        retention-days: 30
+    - name: Upload armeabi-v7a APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: Auxio_Canary-armeabi-v7a
+        path: ./app/build/outputs/apk/debug/app-armeabi-v7a-debug.apk
+        if-no-files-found: error
+        retention-days: 30
+    - name: Upload x86_64 APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: Auxio_Canary-x86_64
+        path: ./app/build/outputs/apk/debug/app-x86_64-debug.apk
+        if-no-files-found: error
+        retention-days: 30
+    - name: Upload x86 APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: Auxio_Canary-x86
+        path: ./app/build/outputs/apk/debug/app-x86-debug.apk
+        if-no-files-found: error
+        retention-days: 30
+    - name: Upload universal APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: Auxio_Canary-universal
+        path: ./app/build/outputs/apk/debug/app-universal-debug.apk
+        if-no-files-found: error
+        retention-days: 30
