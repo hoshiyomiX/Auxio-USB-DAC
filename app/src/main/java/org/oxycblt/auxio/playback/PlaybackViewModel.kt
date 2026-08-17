@@ -139,6 +139,7 @@ constructor(
             AudioInfo.from(
                 runCatching { audioInfoProvider.snapshot() }.getOrNull(),
                 playbackSettings.usbDacMode,
+                usbDacConnectionMonitor.usbDacConnected.value,
                 _song.value,
             )
         )
@@ -295,7 +296,12 @@ constructor(
                             runCatching { audioInfoProvider.snapshot() }.getOrNull()
                         }
                     _audioInfo.value =
-                        AudioInfo.from(snapshot, playbackSettings.usbDacMode, _song.value)
+                        AudioInfo.from(
+                            snapshot,
+                            playbackSettings.usbDacMode,
+                            usbDacConnectionMonitor.usbDacConnected.value,
+                            _song.value,
+                        )
                     delay(AUDIO_INFO_POLL_MS)
                 }
             }

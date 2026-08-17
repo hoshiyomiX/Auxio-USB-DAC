@@ -1190,9 +1190,11 @@ class UsbAudioSink(
      *
      * By returning null, the caller ([AudioInfoProvider]) will report null to the UI,
      * which causes [AudioInfo.from] to use its null-snapshot path — correctly showing
-     * "Android (AudioFlinger)" as the engine and "Pending (codec)" as the decoder.
-     * This gives the user an accurate picture: bit-perfect mode is enabled but no DAC
-     * is connected, so audio is going through Android's default pipeline.
+     * "Android (AudioFlinger)" as the engine and "ExoPlayer MediaCodec (codec)" as the decoder
+     * (NOT "Pending (codec)" — that was a misleading label that implied a transient state which
+     * never resolves when no DAC is connected). This gives the user an accurate picture:
+     * bit-perfect mode is enabled but no DAC is connected, so audio is going through Android's
+     * default pipeline. See the SOP in [AudioInfo] class KDoc for details.
      *
      * @return An [AudioInfoSnapshot] describing the current decoder, engine, output,
      *         and bit-perfect state, or null when the USB pipeline is not active.
