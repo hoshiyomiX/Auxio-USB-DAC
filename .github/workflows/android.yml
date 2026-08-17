@@ -32,10 +32,23 @@ jobs:
         chmod +x decent-media3-decoder-flac/setup.sh decent-usb-audio-driver/setup.sh
         ./decent-media3-decoder-flac/setup.sh
         ./decent-usb-audio-driver/setup.sh
-    - name: Build debug APK with Gradle
+    - name: Build debug APKs with Gradle
+      # packageDebug produces one APK per ABI (arm64-v8a, armeabi-v7a, x86, x86_64)
+      # plus a universal APK, because app/build.gradle defines `splits { abi {} }`.
       run: ./gradlew app:packageDebug
-    - name: Upload debug APK artifact
+    - name: List built APKs
+      run: |
+        echo "=== Per-ABI APK outputs ==="
+        ls -lh app/build/outputs/apk/debug/*.apk || true
+    - name: Upload per-ABI debug APKs
       uses: actions/upload-artifact@v4
       with:
         name: Auxio_Canary
-        path: ./app/build/outputs/apk/debug/app-debug.apk
+        # Glob uploads all 5 APKs (4 per-ABI + 1 universal) as a single artifact bundle.
+        # Downloaders will receive a zip containing:
+        #   app-arm64-v8a-debug.apk     (modern 64-bit ARM phones)
+        #   app-armeabi-v7a-debug.apk   (legacy 32-bit ARM phones)
+        #   app-x86_64-debug.apk        (emulators / Intel tablets)
+        #   app-x86-debug.apk           (legacy emulators)
+        #   app-universal-debug.apk     (fallback, all ABIs)
+        path: ./app/build/outputs/apk/debug/*.apk

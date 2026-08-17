@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import com.android.build.api.variant.FilterConfiguration.FilterType as AbiFilterType
 
 plugins {
     id "com.android.application"
@@ -67,9 +68,66 @@ android {
         }
     }
 
+    // Per-ABI APK splits — produces one APK per ABI instead of a single fat APK.
+    // arm64-v8a     : 64-bit ARM (modern phones, ~99% of devices)
+    // armeabi-v7a   : 32-bit ARM (legacy phones)
+    // x86_64        : emulators / Intel tablets
+    // x86           : legacy emulators (mostly obsolete but kept for compat)
+    // universalApk  : fallback APK containing all ABIs (for unexpected CPU types)
+    //
+    // Each per-ABI APK is substantially smaller than the universal APK because
+    // native libraries (.so) for the other 3 ABIs are excluded.
+    //
+    // Note: AGP 9.0 removed *density* splits, but ABI splits are still supported.
+    // See: https://developer.android.com/build/configure-apk-splits
+    splits {
+        abi {
+            enable true
+            reset()
+            include 'arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64'
+            universalApk true
+        }
+    }
+
     buildFeatures {
         viewBinding true
         buildConfig true
+    }
+}
+
+// Per-ABI versionCode mapping — uses the modern androidComponents.onVariants API.
+// The legacy android.applicationVariants API was REMOVED in AGP 9.0 (newDsl=true by default),
+// so the legacy `variant.outputs.each { output.versionCodeOverride = ... }` pattern would fail.
+//
+// Each per-ABI APK gets a unique, monotonic versionCode so that the same versionName
+// (e.g. 4.1.5) produces distinct versionCodes per ABI. The universal APK is intentionally
+// NOT overridden — it retains the base versionCode (75), which is the LOWEST, so that
+// (if ever uploaded to Play Store) Play Store prefers per-ABI APKs and only falls back to
+// the universal APK for unsupported CPU types.
+//
+// Formula: finalVersionCode = abiCode * 1000 + baseVersionCode
+//   arm64-v8a     → 1 * 1000 + 75 = 1075
+//   armeabi-v7a   → 2 * 1000 + 75 = 2075
+//   x86           → 3 * 1000 + 75 = 3075
+//   x86_64        → 4 * 1000 + 75 = 4075
+//   universal     → 75  (default, NOT overridden — lowest, Play Store fallback)
+//
+// Reference: https://developer.android.com/build/configure-apk-splits
+androidComponents {
+    onVariants { variant ->
+        variant.outputs.forEach { output ->
+            // Find the ABI filter on this output (null for the universal APK)
+            def abiFilter = output.filters.find { it.filterType == AbiFilterType.ABI }
+            if (abiFilter != null) {
+                def abiCodes = ['arm64-v8a': 1, 'armeabi-v7a': 2, 'x86': 3, 'x86_64': 4]
+                def baseAbiCode = abiCodes[abiFilter.identifier]
+                if (baseAbiCode != null) {
+                    def baseVersionCode = output.versionCode.get() ?: android.defaultConfig.versionCode
+                    output.versionCode.set(baseAbiCode * 1000 + baseVersionCode)
+                }
+            }
+            // Universal APK: no override → retains default versionCode (75, lowest)
+        }
     }
 }
 
