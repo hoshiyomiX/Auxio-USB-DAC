@@ -70,6 +70,19 @@ constructor(
     private var lastPositionJob: Job? = null
     private var audioInfoJob: Job? = null
 
+    /**
+     * Coroutine job that reactively refreshes [_audioInfo] whenever [usbDacConnectionMonitor]'s
+     * `usbDacConnected` StateFlow emits a new value (i.e. on USB DAC plug/unplug events).
+     *
+     * Without this collector, the overlay would lag up to 500ms behind plug/unplug events —
+     * the polling loop in [startAudioInfoPolling] only re-reads
+     * `usbDacConnectionMonitor.usbDacConnected.value` every 500ms. This collector triggers an
+     * immediate [refreshAudioInfo] call on every StateFlow emission, so the overlay reflects the
+     * new pipeline state ("Android mixer (no DAC)" → "Pending (sink starting)" → "Native FLAC
+     * (libFLAC)") within milliseconds of the physical plug/unplug event.
+     */
+    private var usbDacConnectionJob: Job? = null
+
     private val _song = MutableStateFlow<Song?>(null)
     /** The currently playing song. */
     val song: StateFlow<Song?>
@@ -173,12 +186,14 @@ constructor(
         playbackManager.addListener(this)
         playbackSettings.registerListener(this)
         startAudioInfoPolling()
+        startUsbDacConnectionCollection()
     }
 
     override fun onCleared() {
         playbackManager.removeListener(this)
         playbackSettings.unregisterListener(this)
         audioInfoJob?.cancel()
+        usbDacConnectionJob?.cancel()
     }
 
     override fun onIndexMoved(index: Int) {
@@ -285,26 +300,71 @@ constructor(
      * until the lock is released, causing visible jank during fragment transitions (e.g. Settings →
      * Home back-navigation). Moving the snapshot off the main thread eliminates this contention
      * source. The [StateFlow] update itself is thread-safe.
+     *
+     * Note: this loop is the fallback for non-event-driven changes (e.g. native engine startup
+     * window, FFmpeg buffer fill progress). For plug/unplug events, see
+     * [startUsbDacConnectionCollection] which triggers an immediate refresh.
      */
     private fun startAudioInfoPolling() {
         audioInfoJob?.cancel()
         audioInfoJob =
             viewModelScope.launch {
                 while (isActive) {
-                    val snapshot =
-                        withContext(Dispatchers.IO) {
-                            runCatching { audioInfoProvider.snapshot() }.getOrNull()
-                        }
-                    _audioInfo.value =
-                        AudioInfo.from(
-                            snapshot,
-                            playbackSettings.usbDacMode,
-                            usbDacConnectionMonitor.usbDacConnected.value,
-                            _song.value,
-                        )
+                    refreshAudioInfo()
                     delay(AUDIO_INFO_POLL_MS)
                 }
             }
+    }
+
+    /**
+     * Start a coroutine that reactively collects [UsbDacConnectionMonitor.usbDacConnected] and
+     * triggers an immediate [refreshAudioInfo] on every emission. This eliminates the up-to-500ms
+     * lag between a physical plug/unplug event and the overlay reflecting the new pipeline state.
+     *
+     * Why this is needed in addition to [startAudioInfoPolling]:
+     * - The polling loop reads `usbDacConnectionMonitor.usbDacConnected.value` (snapshot) every
+     *   500ms — so on a plug/unplug event, the overlay can be stale by up to 500ms.
+     * - The user perceives plug/unplug as an instantaneous event (physical action) and expects the
+     *   overlay to reflect the new state immediately, not "a moment later".
+     * - The `usbDacConnected` StateFlow itself updates immediately (driven by BroadcastReceiver in
+     *   [UsbDacConnectionMonitor]) — toolbar gray-out already benefits from this reactivity. This
+     *   collector extends the same reactivity to the [audioInfo] overlay.
+     *
+     * The collector emits the current value immediately on subscription (StateFlow behavior), so
+     * the overlay is refreshed once at startup. Subsequent emissions trigger refreshes on
+     * plug/unplug events only.
+     */
+    private fun startUsbDacConnectionCollection() {
+        usbDacConnectionJob?.cancel()
+        usbDacConnectionJob =
+            viewModelScope.launch {
+                usbDacConnectionMonitor.usbDacConnected.collect { _ ->
+                    // DAC plug/unplug event — refresh overlay immediately instead of waiting
+                    // for the next polling tick (up to 500ms lag).
+                    refreshAudioInfo()
+                }
+            }
+    }
+
+    /**
+     * Take a fresh snapshot from [audioInfoProvider] and update [_audioInfo]. Shared by both the
+     * 500ms polling loop ([startAudioInfoPolling]) and the reactive plug/unplug collector
+     * ([startUsbDacConnectionCollection]). Thread-safe: the snapshot is dispatched to
+     * [Dispatchers.IO] (because the underlying call is `@Synchronized` and may block), and the
+     * [_audioInfo] StateFlow update is atomic.
+     */
+    private suspend fun refreshAudioInfo() {
+        val snapshot =
+            withContext(Dispatchers.IO) {
+                runCatching { audioInfoProvider.snapshot() }.getOrNull()
+            }
+        _audioInfo.value =
+            AudioInfo.from(
+                snapshot,
+                playbackSettings.usbDacMode,
+                usbDacConnectionMonitor.usbDacConnected.value,
+                _song.value,
+            )
     }
 
     /** Toggle the visibility of the audio info overlay on the album art. Persisted to settings. */

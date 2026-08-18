@@ -115,12 +115,15 @@ class MusicSettingsImpl @Inject constructor(@ApplicationContext private val cont
 
     override var locationMode: LocationMode
         get() {
+            // Default to MEDIA_STORE (the only supported mode post-File-Picker removal).
+            // fromInt() silently migrates the legacy LOCATION_MODE_SAF int code to MEDIA_STORE,
+            // so existing users are auto-upgraded on first read after upgrade.
             val mode =
                 sharedPreferences.getInt(
                     getString(R.string.set_key_locations_mode),
-                    IntegerTable.LOCATION_MODE_SAF,
+                    IntegerTable.LOCATION_MODE_MEDIA_STORE,
                 )
-            return LocationMode.fromInt(mode) ?: LocationMode.SAF
+            return LocationMode.fromInt(mode)
         }
         set(value) {
             sharedPreferences.edit {
