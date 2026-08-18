@@ -145,7 +145,10 @@ object IntegerTable {
     const val COVER_MODE_SAVE_SPACE = 0xA125
     /** CoverMode.AsIs */
     const val COVER_MODE_AS_IS = 0xA126
-    /** Legacy LocationMode.SAF (File Picker) — removed from enum but kept for SharedPreferences migration (silently maps to MEDIA_STORE in LocationMode.fromInt) */
+    /**
+     * Legacy LocationMode.SAF (File Picker) — removed from enum but kept for SharedPreferences
+     * migration (silently maps to MEDIA_STORE in LocationMode.fromInt)
+     */
     const val LOCATION_MODE_SAF = 0xA127
     /** LocationMode.MediaStore */
     const val LOCATION_MODE_MEDIA_STORE = 0xA128

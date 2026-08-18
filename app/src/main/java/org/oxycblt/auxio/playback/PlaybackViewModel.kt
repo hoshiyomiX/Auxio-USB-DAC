@@ -74,8 +74,8 @@ constructor(
      * Coroutine job that reactively refreshes [_audioInfo] whenever [usbDacConnectionMonitor]'s
      * `usbDacConnected` StateFlow emits a new value (i.e. on USB DAC plug/unplug events).
      *
-     * Without this collector, the overlay would lag up to 500ms behind plug/unplug events —
-     * the polling loop in [startAudioInfoPolling] only re-reads
+     * Without this collector, the overlay would lag up to 500ms behind plug/unplug events — the
+     * polling loop in [startAudioInfoPolling] only re-reads
      * `usbDacConnectionMonitor.usbDacConnected.value` every 500ms. This collector triggers an
      * immediate [refreshAudioInfo] call on every StateFlow emission, so the overlay reflects the
      * new pipeline state ("Android mixer (no DAC)" → "Pending (sink starting)" → "Native FLAC
@@ -355,9 +355,7 @@ constructor(
      */
     private suspend fun refreshAudioInfo() {
         val snapshot =
-            withContext(Dispatchers.IO) {
-                runCatching { audioInfoProvider.snapshot() }.getOrNull()
-            }
+            withContext(Dispatchers.IO) { runCatching { audioInfoProvider.snapshot() }.getOrNull() }
         _audioInfo.value =
             AudioInfo.from(
                 snapshot,

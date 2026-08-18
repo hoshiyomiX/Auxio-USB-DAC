@@ -46,8 +46,8 @@ import timber.log.Timber as L
 /**
  * Dialog for configuring music source locations.
  *
- * As of 2026-08-18, the legacy "File Picker" (Storage Access Framework) mode was removed. The dialog
- * now only manages the System Database (MediaStore) mode:
+ * As of 2026-08-18, the legacy "File Picker" (Storage Access Framework) mode was removed. The
+ * dialog now only manages the System Database (MediaStore) mode:
  * - Filter mode (Include / Exclude folders from MediaStore scan)
  * - "Exclude non-music" toggle
  *
@@ -56,8 +56,8 @@ import timber.log.Timber as L
  * defeating the path-based dispatch in `UsbAudioSink.configure()`). Users on the legacy SAF mode
  * are silently migrated to MediaStore via `LocationMode.fromInt()`.
  *
- * Existing SAF-specific UI (mode toggle button group, include/exclude folder lists, multithread
- * and with-hidden switches) has been removed from this dialog and its layout XML. The layout's
+ * Existing SAF-specific UI (mode toggle button group, include/exclude folder lists, multithread and
+ * with-hidden switches) has been removed from this dialog and its layout XML. The layout's
  * remaining relevant sections are: storage permission card, extras dropdown, filter mode, filter
  * list, and exclude-non-music toggle.
  */

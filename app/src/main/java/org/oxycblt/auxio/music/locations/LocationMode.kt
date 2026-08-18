@@ -45,8 +45,8 @@ enum class LocationMode {
     companion object {
         /**
          * Decode a stored int back to a [LocationMode]. Silently migrates the legacy
-         * `LOCATION_MODE_SAF` int code (from the removed File Picker mode) to [MEDIA_STORE]
-         * so existing users are auto-migrated on first read after upgrade.
+         * `LOCATION_MODE_SAF` int code (from the removed File Picker mode) to [MEDIA_STORE] so
+         * existing users are auto-migrated on first read after upgrade.
          */
         fun fromInt(int: Int): LocationMode {
             return when (int) {
