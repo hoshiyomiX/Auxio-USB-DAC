@@ -1221,10 +1221,25 @@ class UsbAudioSink(
         }
 
         // --- Decoder info ---
+        //
+        // Native engine labels are based on engine EXISTENCE (not just isRunning):
+        // a paused native engine (e.g., right after createFromFd + pause() at line 940,
+        // before handleBuffer resumes it) is STILL the active decoder. Using isRunning
+        // here caused a transient mislabel where the overlay showed "FFmpeg (float → int)"
+        // during the brief paused window — see deferred-bug note from prior audit.
+        //
+        // The `usbStreamingThread != null` branch (before `path == null`) fixes the case
+        // where `currentTrackPath` is null (Android 10+ scoped storage where
+        // MediaStore.Audio.Media.DATA column returns null) but FFmpeg is still actively
+        // feeding PCM to the USB DAC. Without this branch, decoderInfo returned null,
+        // causing AudioInfo.from() to fall back to deriveDecoderInfo(song) which labels
+        // "ExoPlayer MediaCodec" — even though the actual decoder is FFmpeg (matching
+        // engineUsed "FFmpeg → int"). VLM screenshot confirmed this mislabel for Opus.
         val decoderInfo: String? = when {
-            flacEngine?.isRunning == true -> "Native FLAC (libFLAC)"
-            opusEngine?.isRunning == true -> "Native Opus (libopus)"
-            path == null -> null
+            flacEngine != null -> "Native FLAC (libFLAC)"
+            opusEngine != null -> "Native Opus (libopus)"
+            usbStreamingThread != null -> "FFmpeg (float → int)"  // FFmpeg feeding USB stream
+            path == null -> null  // No engine, no streaming thread — unknown
             path.lowercase().endsWith(".flac") && flacEngine == null ->
                 "FFmpeg (float → int)"  // FLAC via FFmpeg fallback (engine failed to start)
             path.lowercase().endsWith(".opus") && opusEngine == null ->
@@ -1236,9 +1251,11 @@ class UsbAudioSink(
         val musicFormat: String? = path?.let { inferFormatFromPath(it) }
 
         // --- Engine used ---
+        // Same existence check as decoderInfo: a paused native engine is still the
+        // configured engine — reporting "FFmpeg → int" in that window is misleading.
         val engineUsed: String = when {
-            flacEngine?.isRunning == true -> "Native FLAC"
-            opusEngine?.isRunning == true -> "Native Opus"
+            flacEngine != null -> "Native FLAC"
+            opusEngine != null -> "Native Opus"
             usbStreamingThread != null -> "FFmpeg → int"
             streamAlive -> "ExoPlayer pipeline"
             else -> "None"
@@ -1247,16 +1264,17 @@ class UsbAudioSink(
         // --- Resampler status ---
         val resamplerStatus: String = when {
             !bitPerfectOn -> "Not applicable"
-            flacEngine?.isRunning == true || opusEngine?.isRunning == true ->
+            flacEngine != null || opusEngine != null ->
                 "Native (no resampling)"
             streamAlive -> "Native (no resampling)"  // USB stream matches source
             else -> "Not applicable"
         }
 
         // --- Passthrough status ---
+        // Native engine existence (not just isRunning) = true passthrough path.
         val passthroughStatus: String = when {
             !bitPerfectOn -> "Not applicable"
-            flacEngine?.isRunning == true || opusEngine?.isRunning == true -> "Passthrough"
+            flacEngine != null || opusEngine != null -> "Passthrough"
             streamAlive -> "PCM (decoded)"
             else -> "Off"
         }
@@ -1271,9 +1289,10 @@ class UsbAudioSink(
         } else null
 
         // --- Bit-perfect info ---
+        // Native engine existence (not just isRunning) = bit-perfect path active.
         val bitPerfectInfo: String = when {
             !bitPerfectOn -> "Off"
-            flacEngine?.isRunning == true || opusEngine?.isRunning == true -> "Bit-perfect"
+            flacEngine != null || opusEngine != null -> "Bit-perfect"
             streamAlive -> "PCM (lossless)"
             else -> "Off"
         }
