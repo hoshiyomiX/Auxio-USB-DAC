@@ -551,7 +551,17 @@ class UsbAudioDevice private constructor(private val context: Context) {
             //   dbFixed = volumeMax + (volumeMin - volumeMax) * (1 - warped)
             //   warped = 1.0 → dbFixed = volumeMax (max, typically 0 dB)
             //   warped = 0.0 → dbFixed = volumeMin (would be mute, but we handle 0.0 above)
-            val minFixed = (info?.volumeMin ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN).toInt()
+            //
+            // R-1 fix: Clamp the effective minimum to DEFAULT_VOLUME_MIN (-50 dB) even if
+            // the DAC reports a wider range (e.g., -127.99 dB for full UAC2 compliance).
+            // Without this clamp, wide-range DACs push all audible volume into the upper
+            // half of the slider — the original "0%-middle off, sudden peak at middle"
+            // bug. -50 dB is the practical inaudibility threshold for consumer
+            // headphones/IEMs; anything below it wastes slider real estate.
+            val minFixed = maxOf(
+                (info?.volumeMin ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN).toInt(),
+                UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN
+            )
             val maxFixed = (info?.volumeMax ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MAX).toInt()
             val ratio = (1.0 - warped)  // 0.0 at max, 1.0 at min
             val dbFixed = maxFixed + ((minFixed - maxFixed) * ratio).toInt()
@@ -640,7 +650,15 @@ class UsbAudioDevice private constructor(private val context: Context) {
         //   dbFixed = volumeMax + (volumeMin - volumeMax) * (1 - warped)
         //   → warped = 1 - (dbFixed - volumeMax) / (volumeMin - volumeMax)
         //   → volume = warped^2
-        val minFixed = (info?.volumeMin ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN).toInt()
+        //
+        // R-1 fix: Mirror the hearing-threshold clamp from setUsbVolume. If the DAC
+        // reports volumeMin below -50 dB but setUsbVolume clamps the effective min to
+        // -50 dB, getUsbVolume must use the same effective min for the inverse math —
+        // otherwise round-trip is broken (setUsbVolume(0.5) → getUsbVolume() != 0.5).
+        val minFixed = maxOf(
+            (info?.volumeMin ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN).toInt(),
+            UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN
+        )
         val maxFixed = (info?.volumeMax ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MAX).toInt()
         val range = minFixed - maxFixed  // negative (min < max in dB)
         val linear = if (range == 0) {
