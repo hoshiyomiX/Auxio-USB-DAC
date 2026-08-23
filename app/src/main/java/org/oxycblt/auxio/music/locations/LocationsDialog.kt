@@ -30,14 +30,12 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
-import com.google.android.material.R as MR
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import org.oxycblt.auxio.R
 import org.oxycblt.auxio.databinding.DialogMusicLocationsBinding
 import org.oxycblt.auxio.music.MusicSettings
 import org.oxycblt.auxio.ui.ViewBindingMaterialDialogFragment
-import org.oxycblt.auxio.util.getAttrColorCompat
 import org.oxycblt.auxio.util.showToast
 import org.oxycblt.musikr.fs.Location
 import org.oxycblt.musikr.fs.Volume
@@ -58,9 +56,10 @@ import timber.log.Timber as L
  * are silently migrated to MediaStore via `LocationMode.fromInt()`.
  *
  * Existing SAF-specific UI (mode toggle button group, include/exclude folder lists, multithread and
- * with-hidden switches) has been removed from this dialog and its layout XML. The layout's
- * remaining relevant sections are: storage permission card, extras dropdown, filter mode, filter
- * list, and exclude-non-music toggle.
+ * with-hidden switches) has been removed from this dialog and its layout XML. As of 2026-08-23, the
+ * manual storage-permission card has also been removed — permission is now auto-prompted when the
+ * dialog opens (see onBindingCreated). The layout's remaining relevant sections are: extras
+ * dropdown, filter mode, filter list, and exclude-non-music toggle.
  */
 @AndroidEntryPoint
 class LocationsDialog : ViewBindingMaterialDialogFragment<DialogMusicLocationsBinding>() {
@@ -115,8 +114,6 @@ class LocationsDialog : ViewBindingMaterialDialogFragment<DialogMusicLocationsBi
                     permissionGrantedInSession = true
                 }
                 updatePermissionDependentUI(binding)
-                updatePermissionCardColors(binding)
-                updatePermissionCardVisibility(binding)
                 updateSaveButtonState()
             }
 
@@ -158,14 +155,11 @@ class LocationsDialog : ViewBindingMaterialDialogFragment<DialogMusicLocationsBi
             onNewLocation(localOnlyOpenDocumentTreeLauncher)
         }
 
-        // Set up grant permission card click
-        binding.locationsPermsCard.setOnClickListener { requestStoragePermission() }
-
         // Initialize UI state — System Database mode only, no mode toggle.
+        // Note: storage permission is auto-prompted at the end of this method —
+        // no manual permission card/button remains in the UI.
         updateExcludeModeUI(binding)
         updatePermissionDependentUI(binding)
-        updatePermissionCardColors(binding)
-        updatePermissionCardVisibility(binding)
         updateExtrasVisibility(binding)
         updateSaveButtonState()
 
@@ -284,41 +278,6 @@ class LocationsDialog : ViewBindingMaterialDialogFragment<DialogMusicLocationsBi
             locationsExcludeNonMusicTitle.isEnabled = isEnabled
             locationsExcludeNonMusicDesc.isEnabled = isEnabled
             locationsExcludeNonMusic.isEnabled = isEnabled
-        }
-    }
-
-    private fun updatePermissionCardColors(binding: DialogMusicLocationsBinding) {
-        val context = requireContext()
-        with(binding.locationsPermsCard) {
-            if (hasStoragePermission) {
-                // Has permission - use secondary colors
-                setCardBackgroundColor(context.getAttrColorCompat(MR.attr.colorSecondaryContainer))
-                binding.locationsPermsDesc.setTextColor(
-                    context.getAttrColorCompat(MR.attr.colorOnSecondaryContainer)
-                )
-                binding.locationsPermsSubtitle.setTextColor(
-                    context.getAttrColorCompat(MR.attr.colorOnSecondaryContainer)
-                )
-                binding.locationsPermsOpen.imageTintList =
-                    context.getAttrColorCompat(MR.attr.colorOnSecondaryContainer)
-            } else {
-                setCardBackgroundColor(context.getAttrColorCompat(MR.attr.colorErrorContainer))
-                binding.locationsPermsDesc.setTextColor(
-                    context.getAttrColorCompat(MR.attr.colorOnErrorContainer)
-                )
-                binding.locationsPermsSubtitle.setTextColor(
-                    context.getAttrColorCompat(MR.attr.colorOnErrorContainer)
-                )
-                binding.locationsPermsOpen.imageTintList =
-                    context.getAttrColorCompat(MR.attr.colorOnErrorContainer)
-            }
-        }
-    }
-
-    private fun updatePermissionCardVisibility(binding: DialogMusicLocationsBinding) {
-        with(binding) {
-            // Hide the permission card when permissions are granted
-            locationsPermsCard.isVisible = !hasStoragePermission
         }
     }
 

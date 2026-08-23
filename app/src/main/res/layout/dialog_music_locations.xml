@@ -13,86 +13,13 @@
 
         <!--
             As of 2026-08-18, the legacy "File Picker" (SAF) mode toggle was removed.
-            Only the System Database (MediaStore) mode remains. The dialog now manages:
-              1. Storage permission card (top)
-              2. "Extra Settings" dropdown (filter mode + filter list + exclude-non-music)
+            As of 2026-08-23, the manual storage-permission card was also removed —
+            storage permission is now auto-prompted when the dialog opens (see
+            LocationsDialog.onBindingCreated). The dialog now manages only:
+              1. "Extra Settings" dropdown (filter mode + filter list + exclude-non-music)
             The removed SAF-specific UI sections (mode toggle, include list, exclude list,
             with-hidden switch, multithread switch) are no longer present in this layout.
         -->
-
-        <FrameLayout
-            android:id="@+id/locations_perms_container"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingStart="@dimen/spacing_large"
-            android:paddingTop="@dimen/spacing_medium"
-            android:paddingEnd="@dimen/spacing_large"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toTopOf="parent">
-
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/locations_perms_card"
-                style="@style/Widget.Material3.CardView.Filled"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:clickable="true"
-                android:focusable="true"
-                android:layout_marginBottom="@dimen/spacing_medium"
-                android:textAlignment="viewStart"
-                android:textAppearance="?attr/textAppearanceBodyLarge"
-                app:cardBackgroundColor="?attr/colorSecondaryContainer">
-
-                <androidx.constraintlayout.widget.ConstraintLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:layout_margin="@dimen/spacing_medium">
-
-                    <TextView
-                        android:id="@+id/locations_perms_desc"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:textAlignment="viewStart"
-                        android:layout_marginEnd="@dimen/spacing_tiny"
-                        android:textAppearance="?attr/textAppearanceBodyLarge"
-                        android:textColor="?attr/colorOnSecondaryContainer"
-                        app:layout_constraintBottom_toTopOf="@+id/locations_perms_subtitle"
-                        app:layout_constraintEnd_toStartOf="@+id/locations_perms_open"
-                        app:layout_constraintHorizontal_bias="0.5"
-                        app:layout_constraintStart_toStartOf="parent"
-                        app:layout_constraintTop_toTopOf="parent"
-                        tools:text="Storage Access Recommended" />
-
-                    <TextView
-                        android:id="@+id/locations_perms_subtitle"
-                        style="@style/Widget.Auxio.TextView.Secondary.Compact"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:maxLines="2"
-                        android:textAlignment="viewStart"
-                        android:textColor="?attr/colorOnSecondaryContainer"
-                        android:alpha="0.85"
-                        app:layout_constraintBottom_toBottomOf="parent"
-                        app:layout_constraintEnd_toEndOf="@+id/locations_perms_desc"
-                        app:layout_constraintStart_toStartOf="parent"
-                        app:layout_constraintTop_toBottomOf="@+id/locations_perms_desc"
-                        tools:text="Can fix loading on some devices" />
-
-                    <ImageView
-                        android:id="@+id/locations_perms_open"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:src="@drawable/ic_open_20"
-                        app:layout_constraintBottom_toBottomOf="parent"
-                        app:layout_constraintEnd_toEndOf="parent"
-                        app:layout_constraintTop_toTopOf="parent"
-                        app:tint="?attr/colorOnSecondaryContainer" />
-
-                </androidx.constraintlayout.widget.ConstraintLayout>
-
-            </com.google.android.material.card.MaterialCardView>
-        </FrameLayout>
-
 
         <TextView
             android:id="@+id/locations_extras_dropdown"
@@ -104,7 +31,7 @@
             android:paddingVertical="@dimen/spacing_medium"
             android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
             tools:text="Extra Settings"
-            app:layout_constraintTop_toBottomOf="@+id/locations_perms_container" />
+            app:layout_constraintTop_toTopOf="parent" />
 
         <ImageView
             android:id="@+id/locations_extras_dropdown_icon"
@@ -116,7 +43,7 @@
             app:tint="?attr/colorOnSurfaceVariant"
             app:layout_constraintBottom_toBottomOf="@+id/locations_extras_dropdown"
             app:layout_constraintEnd_toEndOf="@+id/locations_extras_dropdown"
-            app:layout_constraintTop_toBottomOf="@+id/locations_perms_container" />
+            app:layout_constraintTop_toTopOf="parent" />
 
         <TextView
             android:id="@+id/locations_exclude_mode_header"
