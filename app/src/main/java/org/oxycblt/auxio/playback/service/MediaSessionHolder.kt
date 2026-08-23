@@ -158,20 +158,7 @@ private constructor(
         val cb = volumeCallback
         if (cb != null) {
             // F-1: Query DAC's actual hardware volume for slider initialization
-            val dacVolume = try {
-                val usbAudioDevice = UsbAudioDevice.getInstance(context)
-                val vol = usbAudioDevice.getUsbVolume()
-                if (vol < 0f) {
-                    L.w("MediaSession: getUsbVolume returned $vol — using default 1f")
-                    1f
-                } else {
-                    L.d("MediaSession: getUsbVolume returned $vol — using as initial volume")
-                    vol
-                }
-            } catch (e: Exception) {
-                L.w("MediaSession: getUsbVolume threw ${e.message} — using default 1f")
-                1f
-            }
+            val dacVolume = queryDacVolume()
             val provider = UsbDacVolumeProvider(onVolumeChanged = cb, initialVolume = dacVolume)
             usbVolumeProvider = provider
             mediaSession.setPlaybackToRemote(provider)
@@ -179,6 +166,29 @@ private constructor(
         } else {
             L.w("USB DAC active but volumeCallback null — volume keys won't adjust USB DAC")
             L.w("Set volumeCallback before attach() to enable USB DAC volume control")
+        }
+    }
+
+    /**
+     * F-1: Query the USB DAC's actual hardware volume via [UsbAudioDevice.getUsbVolume]. Used to
+     * initialize the [UsbDacVolumeProvider] with the DAC's real volume level instead of always
+     * starting at 100%. Returns 1f (max) as fallback if the DAC is not open, has no Feature Unit,
+     * or the GET_CUR control transfer fails.
+     */
+    private fun queryDacVolume(): Float {
+        return try {
+            val usbAudioDevice = UsbAudioDevice.getInstance(context)
+            val vol = usbAudioDevice.getUsbVolume()
+            if (vol < 0f) {
+                L.w("MediaSession: getUsbVolume returned $vol — using default 1f")
+                1f
+            } else {
+                L.d("MediaSession: getUsbVolume returned $vol — using as initial volume")
+                vol
+            }
+        } catch (e: Exception) {
+            L.w("MediaSession: getUsbVolume threw ${e.message} — using default 1f")
+            1f
         }
     }
 
