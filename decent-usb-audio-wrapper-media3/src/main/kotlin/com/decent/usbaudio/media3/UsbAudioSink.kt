@@ -1307,12 +1307,14 @@ class UsbAudioSink(
         // - FLAC: "Bit-perfect" = accurate. FLAC is lossless — decoded PCM is
         //   bit-identical to the original recording. The decode→USB path adds
         //   zero processing (no float, no resampling, no software gain).
-        // - Opus: "Lossless path" (NOT "Bit-perfect"). Opus is a lossy codec —
-        //   the source material has already lost data during lossy compression.
-        //   The decode→USB path is lossless (libopus outputs int16 directly,
-        //   no float conversion), but claiming "Bit-perfect" for a lossy source
-        //   is misleading. "Lossless path" accurately describes the transport
-        //   without implying the source is lossless.
+        // - Opus: "Lossy source" (NOT "Bit-perfect" or "Lossless path"). Opus
+        //   is a lossy codec — source material has already lost data during
+        //   compression. The decode→USB transport is lossless (libopus outputs
+        //   int16 directly, no float conversion), but the source itself is not.
+        //   "Lossy source" is unambiguous: it tells the user the file format
+        //   is lossy, without implying the transport is lossy.
+        //   ("Lossless path" was rejected — ambiguous, could be read as
+        //   "true lossless audio" like FLAC/ALAC/WAV.)
         // - FFmpeg path: "PCM (converted)" (NOT "PCM (lossless)"). FFmpeg
         //   outputs float32, which is converted to int16/24/32 via truncation.
         //   This conversion introduces quantization error (~0.5 LSB noise).
@@ -1320,7 +1322,7 @@ class UsbAudioSink(
         val bitPerfectInfo: String = when {
             !bitPerfectOn -> "Off"
             flacEngine != null -> "Bit-perfect"
-            opusEngine != null -> "Lossless path"
+            opusEngine != null -> "Lossy source"
             streamAlive -> "PCM (converted)"
             else -> "Off"
         }
