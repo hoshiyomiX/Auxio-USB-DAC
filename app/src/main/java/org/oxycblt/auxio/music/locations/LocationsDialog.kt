@@ -168,6 +168,21 @@ class LocationsDialog : ViewBindingMaterialDialogFragment<DialogMusicLocationsBi
         updatePermissionCardVisibility(binding)
         updateExtrasVisibility(binding)
         updateSaveButtonState()
+
+        // Auto-prompt for storage permission on first dialog open.
+        // Previously, the user had to tap the permission card to trigger the system
+        // permission dialog — an extra step that felt disconnected from the
+        // "tap Music sources" intent. Now, opening the dialog immediately fires
+        // the permission request if access hasn't been granted yet.
+        //
+        // savedInstanceState == null only on first creation (not on rotation
+        // recreation), so we don't re-prompt users who already dismissed the
+        // request and then rotated the device. Reopening the dialog after
+        // closing it produces a fresh instance → savedInstanceState == null →
+        // auto-prompt fires again, which is the expected UX.
+        if (!hasStoragePermission && savedInstanceState == null) {
+            binding.root.post { requestStoragePermission() }
+        }
     }
 
     private fun loadInitialState(binding: DialogMusicLocationsBinding) {
