@@ -81,7 +81,7 @@ class LocationsDialog : ViewBindingMaterialDialogFragment<DialogMusicLocationsBi
 
     private var isIncludeMode = true
     private var hasStoragePermission = false
-    private var isExtrasExpanded = false
+    private var isExtrasExpanded = true
     private var pendingLocationCallback: ((Location.Unopened) -> Unit)? = null
     private var permissionGrantedInSession = false
 

@@ -173,7 +173,7 @@ class MusicSettingsImpl @Inject constructor(@ApplicationContext private val cont
             val filterMode =
                 sharedPreferences.getInt(
                     getString(R.string.set_key_filter_mode),
-                    IntegerTable.FILTER_MODE_EXCLUDE,
+                    IntegerTable.FILTER_MODE_INCLUDE,
                 )
             val filteredLocations =
                 unlikelyToBeNull(
@@ -190,7 +190,7 @@ class MusicSettingsImpl @Inject constructor(@ApplicationContext private val cont
                     when (filterMode) {
                         IntegerTable.FILTER_MODE_INCLUDE -> MediaStore.FilterMode.INCLUDE
                         IntegerTable.FILTER_MODE_EXCLUDE -> MediaStore.FilterMode.EXCLUDE
-                        else -> MediaStore.FilterMode.EXCLUDE
+                        else -> MediaStore.FilterMode.INCLUDE
                     },
                 filtered = filteredLocations,
                 excludeNonMusic = excludeNonMusic,
