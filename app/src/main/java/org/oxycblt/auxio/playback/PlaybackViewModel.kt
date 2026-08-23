@@ -276,6 +276,12 @@ constructor(
 
     override fun onUsbDacModeChanged() {
         _usbDacMode.value = playbackSettings.usbDacMode
+        // #3 fix: Trigger immediate overlay refresh when USB DAC mode changes.
+        // Previously the overlay only updated on the next 500ms polling tick,
+        // causing visible lag when toggling USB DAC on/off. This call forces
+        // an immediate snapshot so the overlay reflects the new pipeline state
+        // (e.g. "Bit-perfect" → "Off") without waiting for the next poll.
+        viewModelScope.launch { refreshAudioInfo() }
     }
 
     /**
@@ -819,7 +825,7 @@ constructor(
 
     private companion object {
         private const val STEP_INCREMENT = 10000 // ms
-        private const val AUDIO_INFO_POLL_MS = 500L
+        private const val AUDIO_INFO_POLL_MS = 200L
     }
 }
 

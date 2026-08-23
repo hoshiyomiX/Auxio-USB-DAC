@@ -223,6 +223,14 @@ class PlaybackPanelFragment :
 
     override fun onMenuItemClick(item: MenuItem): Boolean {
         if (item.itemId == R.id.action_toggle_usb_dac) {
+            // #1 fix: Guard against clicking when no USB DAC is connected.
+            // item.isEnabled = false does not always prevent onMenuItemClick from
+            // firing on some Android versions / toolbar implementations. This
+            // explicit check ensures the toggle is a no-op when disconnected.
+            if (!playbackModel.usbDacConnected.value) {
+                L.d("USB DAC toggle ignored — no DAC connected")
+                return true
+            }
             // Toggle USB DAC bit-perfect mode at runtime. The setting write fires the
             // PlaybackSettings dispatch pipeline, which invokes onUsbDacModeChanged()
             // on ExoPlaybackStateHolder (flips UsbAudioSink.bitPerfectEnabled + forces
@@ -400,14 +408,18 @@ class PlaybackPanelFragment :
             requireBinding().playbackToolbar.menu.findItem(R.id.action_toggle_usb_dac) ?: return
         item.isChecked = enabled
         item.isEnabled = connected
-        // Force the icon to refresh from the selector — without this the toolbar may cache
-        // the original icon and not pick up the state change immediately.
-        val iconRes = if (enabled) R.drawable.ic_usb_dac_on_24 else R.drawable.ic_usb_dac_off_24
-        val icon = androidx.core.content.ContextCompat.getDrawable(requireContext(), iconRes)
-        // Dim the icon when disabled to visually communicate that the toggle is unavailable.
-        // 255 = fully opaque, 128 = ~50% opacity (standard Material disabled-state alpha).
-        icon?.alpha = if (connected) 255 else 128
-        item.icon = icon
+        // #2 fix: Use the selector drawable instead of manually swapping icons.
+        // The selector (sel_usb_dac_state_24) automatically picks ic_usb_dac_on_24
+        // (colorPrimary tint) when checked, or ic_usb_dac_off_24 (colorControlNormal
+        // tint) when unchecked. The previous code manually loaded the drawable via
+        // ContextCompat.getDrawable(), which bypassed the selector's tint logic and
+        // made both states look identical (both rendered with default icon tint).
+        item.setIcon(R.drawable.sel_usb_dac_state_24)
+        // Dim the icon when disabled to visually communicate that the toggle is
+        // unavailable. Using icon alpha on the MenuItem directly is more reliable
+        // than setting alpha on a Drawable instance (which can be recycled).
+        val alpha = if (connected) 255 else 128
+        item.icon?.alpha = alpha
     }
 
     override fun seek(direction: Direction) {
