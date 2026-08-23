@@ -233,8 +233,15 @@ class UsbAudioSink(
     private var currentEncoding: Int = C.ENCODING_PCM_16BIT
     private var currentSampleRate: Int = 0
     private var currentChannelCount: Int = 0
-    private var pendingVolume: Float = 1f
-    private var delegateMuted: Boolean = false
+    // P3 fix: pendingVolume and delegateMuted are accessed from multiple threads:
+    //   - Main thread: ExoPlaybackStateHolder calls player.setVolume → UsbAudioSink.setVolume
+    //   - Renderer thread: handleBuffer → muteDelegateIfNeeded / unmuteDelegateIfNeeded
+    //   - MediaSession volume callback thread: UsbDacVolumeProvider.onVolumeChanged → setVolume
+    // Without @Volatile, a write by one thread (e.g., setVolume updating pendingVolume)
+    // may not be visible to another thread (e.g., unmuteDelegateIfNeeded reading it) —
+    // causing the delegate to unmute with a stale volume value.
+    @Volatile private var pendingVolume: Float = 1f
+    @Volatile private var delegateMuted: Boolean = false
     private var handleBufferCallCount: Long = 0
 
     /**
