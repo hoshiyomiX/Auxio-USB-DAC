@@ -558,9 +558,13 @@ class UsbAudioDevice private constructor(private val context: Context) {
             // half of the slider — the original "0%-middle off, sudden peak at middle"
             // bug. -50 dB is the practical inaudibility threshold for consumer
             // headphones/IEMs; anything below it wastes slider real estate.
+            //
+            // Note: DEFAULT_VOLUME_MIN is declared as Short (UAC2 volume is signed 16-bit),
+            // but minFixed is Int (for arithmetic with maxFixed). Convert both operands to
+            // Int before maxOf to avoid Kotlin's "no overload for maxOf(Int, Short)" error.
             val minFixed = maxOf(
                 (info?.volumeMin ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN).toInt(),
-                UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN
+                UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN.toInt()
             )
             val maxFixed = (info?.volumeMax ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MAX).toInt()
             val ratio = (1.0 - warped)  // 0.0 at max, 1.0 at min
@@ -655,9 +659,11 @@ class UsbAudioDevice private constructor(private val context: Context) {
         // reports volumeMin below -50 dB but setUsbVolume clamps the effective min to
         // -50 dB, getUsbVolume must use the same effective min for the inverse math —
         // otherwise round-trip is broken (setUsbVolume(0.5) → getUsbVolume() != 0.5).
+        //
+        // Note: DEFAULT_VOLUME_MIN is Short; convert to Int for maxOf (see setUsbVolume).
         val minFixed = maxOf(
             (info?.volumeMin ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN).toInt(),
-            UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN
+            UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN.toInt()
         )
         val maxFixed = (info?.volumeMax ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MAX).toInt()
         val range = minFixed - maxFixed  // negative (min < max in dB)
