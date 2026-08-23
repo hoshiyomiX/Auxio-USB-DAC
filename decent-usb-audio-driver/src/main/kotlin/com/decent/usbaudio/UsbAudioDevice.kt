@@ -453,9 +453,12 @@ class UsbAudioDevice private constructor(private val context: Context) {
         if (minRet >= 2) {
             val raw = ((minData[1].toInt() and 0xFF) shl 8) or (minData[0].toInt() and 0xFF)
             val signed = raw.toShort()
-            // Only use the queried value if it's negative (attenuation). A positive or zero
-            // min would be nonsensical for a volume control — likely a garbled transfer.
-            if (signed <= 0) {
+            // Only use the queried value if it's strictly negative (attenuation). A min of 0
+            // is nonsensical — it would mean "0 dB is the minimum", implying the DAC has no
+            // attenuation capability at all. Some buggy DACs report min=0/max=0, which
+            // previously caused an inverted range in setUsbVolume (minFixed > maxFixed after
+            // the ceiling clamp), producing the "0% peak, 1-100% no sound" bug.
+            if (signed < 0) {
                 // Clamp to 0x8001 (-32767, -127.99 dB) — 0x8000 (-32768) is the UAC2 mute
                 // value and must not be used as the minimum non-mute volume.
                 minVal = if (signed <= -32768) -32767 else signed
@@ -463,7 +466,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
                 Log.i(TAG, "queryVolumeRange: GET_MIN = $signed → clamped to $minVal " +
                         "(0x${(minVal.toInt() and 0xFFFF).toString(16)}) = ${"%.2f".format(db)} dB")
             } else {
-                Log.w(TAG, "queryVolumeRange: GET_MIN returned positive value $signed — using default")
+                Log.w(TAG, "queryVolumeRange: GET_MIN returned non-negative value $signed — using default")
             }
         } else {
             Log.w(TAG, "queryVolumeRange: GET_MIN failed (ret=$minRet) — using default min = -50 dB")
@@ -489,6 +492,17 @@ class UsbAudioDevice private constructor(private val context: Context) {
             }
         } else {
             Log.w(TAG, "queryVolumeRange: GET_MAX failed (ret=$maxRet) — using default max = 0 dB")
+        }
+
+        // Degenerate-range detection: if minVal >= maxVal, the DAC reported a nonsensical
+        // range (e.g., both 0, or min > max). This would invert the volume math in
+        // setUsbVolume, producing the "0% peak, 1-100% no sound" bug. Reset to safe
+        // defaults so the slider works correctly even on misbehaving DACs.
+        if (minVal >= maxVal) {
+            Log.w(TAG, "queryVolumeRange: degenerate range [$minVal, $maxVal] " +
+                    "(min >= max) — resetting to defaults [-12800, 0] (-50 dB to 0 dB)")
+            minVal = UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN
+            maxVal = UsbAudioDeviceInfo.DEFAULT_VOLUME_MAX
         }
 
         Log.i(TAG, "queryVolumeRange: final range = [${minVal}, ${maxVal}] " +
@@ -579,10 +593,27 @@ class UsbAudioDevice private constructor(private val context: Context) {
                 (info?.volumeMax ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MAX).toInt(),
                 UsbAudioDeviceInfo.CEILING_VOLUME_MAX.toInt()
             )
+            // Safety guard: if minFixed >= maxFixed (can happen if cachedDeviceInfo has a
+            // degenerate range that wasn't caught by queryVolumeRange — e.g., the device
+            // was opened before the fix, or the cached info is stale), reset to safe
+            // defaults. Without this guard, the ratio math below produces inverted volume
+            // (low slider → high dB, high slider → low dB) and the coerceIn at the end
+            // either no-ops or pushes everything to maxFixed.
+            val safeMin: Int
+            val safeMax: Int
+            if (minFixed < maxFixed) {
+                safeMin = minFixed
+                safeMax = maxFixed
+            } else {
+                Log.w(TAG, "setUsbVolume: degenerate range [$minFixed, $maxFixed] " +
+                        "(min >= max) — using defaults [-12800, -496]")
+                safeMin = UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN.toInt()
+                safeMax = UsbAudioDeviceInfo.CEILING_VOLUME_MAX.toInt()
+            }
             val ratio = (1.0 - warped)  // 0.0 at max, 1.0 at min
-            val dbFixed = maxFixed + ((minFixed - maxFixed) * ratio).toInt()
-            // Clamp to the DAC's actual range to be safe
-            val clampedFixed = dbFixed.coerceIn(minFixed, maxFixed)
+            val dbFixed = safeMax + ((safeMin - safeMax) * ratio).toInt()
+            // Clamp to the effective range to be safe
+            val clampedFixed = dbFixed.coerceIn(safeMin, safeMax)
             clampedFixed.toShort()
         }
 
@@ -686,11 +717,23 @@ class UsbAudioDevice private constructor(private val context: Context) {
             (info?.volumeMax ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MAX).toInt(),
             UsbAudioDeviceInfo.CEILING_VOLUME_MAX.toInt()
         )
-        val range = minFixed - maxFixed  // negative (min < max in dB)
+        // Mirror the safety guard from setUsbVolume: if the cached range is degenerate
+        // (min >= max), use safe defaults so round-trip stays consistent.
+        val safeMin: Int
+        val safeMax: Int
+        if (minFixed < maxFixed) {
+            safeMin = minFixed
+            safeMax = maxFixed
+        } else {
+            Log.w(TAG, "getUsbVolume: degenerate range [$minFixed, $maxFixed] — using defaults")
+            safeMin = UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN.toInt()
+            safeMax = UsbAudioDeviceInfo.CEILING_VOLUME_MAX.toInt()
+        }
+        val range = safeMin - safeMax  // negative (min < max in dB)
         val linear = if (range == 0) {
             1f  // Degenerate range — no attenuation possible, always max
         } else {
-            val warped = (1.0 - (signed - maxFixed).toDouble() / range)
+            val warped = (1.0 - (signed - safeMax).toDouble() / range)
                 .coerceIn(0.0, 1.0)  // 0.0 at min, 1.0 at max
             // Inverse of sqrt() is squaring — gives the slider position that would
             // produce this hardware volume level.

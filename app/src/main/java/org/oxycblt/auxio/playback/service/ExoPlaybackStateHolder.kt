@@ -90,6 +90,7 @@ class ExoPlaybackStateHolder(
     private val saveScope = CoroutineScope(Dispatchers.IO + saveJob)
     private val restoreScope = CoroutineScope(Dispatchers.IO + saveJob)
     private var currentSaveJob: Job? = null
+    private var usbDacResumeJob: Job? = null
     private var openAudioEffectSession = false
 
     var sessionOngoing = false
@@ -591,14 +592,47 @@ class ExoPlaybackStateHolder(
         super.onUsbDacModeChanged()
         val enabled = playbackSettings.usbDacMode
         L.d("USB DAC mode changed mid-session: $enabled — applying at runtime")
+
+        // Cancel any pending resume from a prior toggle — the new toggle supersedes it
+        // and we don't want a stale resume to fire after the renderer has been
+        // reconfigured for the opposite mode.
+        usbDacResumeJob?.cancel()
+        usbDacResumeJob = null
+
         usbSink?.setBitPerfectEnabled(enabled)
         // Force the audio renderer to re-configure so the new bitPerfectEnabled value
         // is honored on the current track. seekTo(currentPosition) flushes the renderer
         // and triggers a fresh configure() call on the next buffer.
+        //
+        // Bug fix (2026-08-23): previously, this only called seekTo() without pausing
+        // first. The renderer reconfigure happened while playback was active, causing
+        // audio glitches (clicks, dropped frames, or no audible transition). Now we
+        // pause before the seek, then resume after a short delay (300ms) to let the
+        // renderer fully flush and re-init the USB streaming thread / AudioTrack.
         if (sessionOngoing) {
+            val wasPlaying = player.isPlaying
             val pos = player.currentPosition
-            L.d("Forcing renderer reconfigure via seekTo($pos)")
+            L.d("Pausing for renderer reconfigure (wasPlaying=$wasPlaying, pos=$pos)")
+            player.pause()
             player.seekTo(pos)
+            if (wasPlaying) {
+                usbDacResumeJob =
+                    saveScope.launch {
+                        delay(USB_DAC_RESUME_DELAY_MS)
+                        withContext(Dispatchers.Main) {
+                            if (
+                                sessionOngoing &&
+                                    player.playbackState != Player.STATE_ENDED &&
+                                    player.playbackState != Player.STATE_IDLE
+                            ) {
+                                L.d("Resuming playback after USB DAC mode reconfigure")
+                                player.play()
+                            } else {
+                                L.d("Skipping resume — session ended or playback state invalid")
+                            }
+                        }
+                    }
+            }
         }
     }
 
@@ -796,5 +830,11 @@ class ExoPlaybackStateHolder(
 
     private companion object {
         const val SAVE_BUFFER = 5000L
+        /**
+         * Delay before resuming playback after USB DAC mode toggle, in milliseconds. Gives the
+         * renderer time to flush + re-init the USB streaming thread / AudioTrack before play() is
+         * called. Too short → audio glitches; too long → feels sluggish.
+         */
+        const val USB_DAC_RESUME_DELAY_MS = 300L
     }
 }
