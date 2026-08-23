@@ -73,6 +73,12 @@ internal object PcmUtils {
      *  - 32-bit → multiply by 2147483647 and clamp to [Int.MIN_VALUE, Int.MAX_VALUE]
      *
      * [C.ENCODING_PCM_FLOAT] is written as-is without clamping.
+     *
+     * F-5 note: 32-bit uses [toDouble] + [Double] arithmetic because [Float] cannot represent
+     * `Int.MAX_VALUE` (2147483647) exactly — Float has a 24-bit mantissa, but 2^31 needs 32 bits.
+     * Using Float would silently round to 2147483648.0, which overflows [Int] on conversion.
+     * 16-bit and 24-bit use [Float] because their max values (32767, 8388607) are within
+     * Float's 24-bit mantissa precision range — no precision loss.
      */
     fun writeFloat(buffer: ByteBuffer, sample: Float, encoding: Int) {
         when (encoding) {

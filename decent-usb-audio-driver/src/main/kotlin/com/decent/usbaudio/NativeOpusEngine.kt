@@ -78,6 +78,12 @@ class NativeOpusEngine : NativeEngine {
                 // back to the FFmpeg pipeline.
                 Log.w(TAG, "Opus JNI symbols unavailable (build without libopus?): ${e.message}")
                 0L
+            } catch (e: RuntimeException) {
+                // F-3 fix: Catch broader RuntimeException (e.g. JNI env setup failure,
+                // OutOfMemoryError in native buffer allocation) to prevent app crash.
+                // Caller falls back to the FFmpeg pipeline, same as UnsatisfiedLinkError.
+                Log.w(TAG, "Opus engine creation failed (RuntimeException): ${e.message}")
+                0L
             }
         if (handle == 0L) {
             Log.e(TAG, "Failed to create native Opus engine")

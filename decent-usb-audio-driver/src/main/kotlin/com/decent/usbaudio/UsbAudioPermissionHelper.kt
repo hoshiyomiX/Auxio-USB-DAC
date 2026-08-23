@@ -30,7 +30,14 @@ object UsbAudioPermissionHelper {
      * Handle a USB_DEVICE_ATTACHED intent. Claims the device immediately
      * to prevent the kernel snd-usb-audio driver from configuring it.
      *
+     * F-2 fix: [openDevice] is dispatched to a background thread to avoid potential ANR
+     * when called from the main thread (Activity's onCreate/onNewIntent). The USB
+     * descriptor parsing + controlTransfer calls inside openDevice can block for up to
+     * 500ms each (GET_MIN, GET_MAX, etc.), which on slow DACs can trigger ANR.
+     *
      * @return The USB device if it was an audio device and was claimed, null otherwise.
+     *         Note: when permission needs to be requested first, this returns null
+     *         immediately and the device is opened asynchronously in the callback.
      */
     fun handleIntent(context: Context, intent: Intent): UsbDevice? {
         if (intent.action != UsbManager.ACTION_USB_DEVICE_ATTACHED) return null
@@ -42,16 +49,25 @@ object UsbAudioPermissionHelper {
         val audioDevice = usbAudioDevice.findUsbAudioDevice() ?: return null
 
         if (usbAudioDevice.hasPermission(audioDevice)) {
-            val info = usbAudioDevice.openDevice(audioDevice)
-            if (info != null) {
-                Log.i(TAG, "USB audio device claimed: ${info.deviceName}")
-                return audioDevice
-            }
+            // F-2: Dispatch openDevice to background thread — it does USB control transfers
+            // (GET_MIN, GET_MAX, descriptor parsing) that can block for up to 500ms each
+            Thread {
+                val info = usbAudioDevice.openDevice(audioDevice)
+                if (info != null) {
+                    Log.i(TAG, "USB audio device claimed: ${info.deviceName}")
+                } else {
+                    Log.w(TAG, "USB audio device open failed (background thread)")
+                }
+            }.start()
+            return audioDevice
         } else {
             usbAudioDevice.requestPermission(audioDevice) { granted ->
                 if (granted) {
-                    val info = usbAudioDevice.openDevice(audioDevice)
-                    Log.i(TAG, "Permission granted, device claimed: ${info?.deviceName}")
+                    // F-2: Permission callback also runs openDevice on background thread
+                    Thread {
+                        val info = usbAudioDevice.openDevice(audioDevice)
+                        Log.i(TAG, "Permission granted, device claimed: ${info?.deviceName}")
+                    }.start()
                 }
             }
         }

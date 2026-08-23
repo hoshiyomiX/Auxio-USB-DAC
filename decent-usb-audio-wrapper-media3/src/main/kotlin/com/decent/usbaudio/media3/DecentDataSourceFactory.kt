@@ -81,6 +81,11 @@ class DecentDataSourceFactory(context: Context) : DataSource.Factory {
 
     /**
      * DataSource that inspects the URI on open() and delegates to the appropriate backend.
+     *
+     * F-4 fix: Previously, if SFTP was used, `defaultSource` was created eagerly but never
+     * opened or closed — potential resource leak (file handles, connections). Now, both
+     * sources are closed in `close()` to ensure no resources are leaked regardless of which
+     * backend was selected.
      */
     private class RoutingDataSource(
         private val defaultSource: DataSource,
@@ -104,7 +109,25 @@ class DecentDataSourceFactory(context: Context) : DataSource.Factory {
         override fun getUri(): android.net.Uri? = activeSource?.uri
 
         override fun close() {
-            activeSource?.close()
+            // F-4 fix: Close both sources to prevent resource leak.
+            // activeSource is the one that was opened; the other was created but not opened.
+            // Closing an un-opened DataSource is a no-op per the media3 contract.
+            try {
+                activeSource?.close()
+            } catch (e: Exception) {
+                // Ignore close errors on the active source
+            }
+            try {
+                // Also close the inactive source — it was created eagerly in the constructor
+                // but may hold resources (DefaultDataSource creates a ContentDataSource, etc.)
+                if (activeSource === sftpSource) {
+                    defaultSource.close()
+                } else if (activeSource === defaultSource) {
+                    sftpSource.close()
+                }
+            } catch (e: Exception) {
+                // Ignore close errors on the inactive source
+            }
             activeSource = null
         }
     }
