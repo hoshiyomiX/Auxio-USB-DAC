@@ -566,7 +566,19 @@ class UsbAudioDevice private constructor(private val context: Context) {
                 (info?.volumeMin ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN).toInt(),
                 UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN.toInt()
             )
-            val maxFixed = (info?.volumeMax ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MAX).toInt()
+            // R-2 ceiling fix: Hard-cap effective volumeMax at CEILING_VOLUME_MAX (-1.94 dB
+            // = 0.8 linear gain) so slider 100% never sends raw 0 dB to the DAC. This
+            // protects hearing/speakers on sensitive IEMs/headphones where 0 dB FS can
+            // produce 110+ dB SPL. minOf picks the lower of (DAC's actual volumeMax,
+            // ceiling) — if DAC max is already below ceiling (e.g., -3 dB), respect it;
+            // if DAC supports >ceiling (e.g., +6 dB gain stage), hard-cap at ceiling.
+            //
+            // Bit-perfect preserved: SET_CUR controls DAC's analog gain stage, NOT the
+            // PCM stream. PCM data sent via USB isochronous transfers is untouched.
+            val maxFixed = minOf(
+                (info?.volumeMax ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MAX).toInt(),
+                UsbAudioDeviceInfo.CEILING_VOLUME_MAX.toInt()
+            )
             val ratio = (1.0 - warped)  // 0.0 at max, 1.0 at min
             val dbFixed = maxFixed + ((minFixed - maxFixed) * ratio).toInt()
             // Clamp to the DAC's actual range to be safe
@@ -665,7 +677,15 @@ class UsbAudioDevice private constructor(private val context: Context) {
             (info?.volumeMin ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN).toInt(),
             UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN.toInt()
         )
-        val maxFixed = (info?.volumeMax ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MAX).toInt()
+        // R-2 ceiling fix: Mirror the ceiling clamp from setUsbVolume. If setUsbVolume
+        // hard-caps effective volumeMax at CEILING_VOLUME_MAX, getUsbVolume must use the
+        // same effective max for the inverse math — otherwise round-trip is broken
+        // (setUsbVolume(1.0) → raw16 = -496 → getUsbVolume without mirror returns 0.99
+        // instead of 1.0). minOf picks the lower of (DAC's actual volumeMax, ceiling).
+        val maxFixed = minOf(
+            (info?.volumeMax ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MAX).toInt(),
+            UsbAudioDeviceInfo.CEILING_VOLUME_MAX.toInt()
+        )
         val range = minFixed - maxFixed  // negative (min < max in dB)
         val linear = if (range == 0) {
             1f  // Degenerate range — no attenuation possible, always max

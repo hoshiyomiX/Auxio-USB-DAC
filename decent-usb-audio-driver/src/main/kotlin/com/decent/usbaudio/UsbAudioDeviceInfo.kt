@@ -51,5 +51,33 @@ data class UsbAudioDeviceInfo(
 
         /** Default max volume if GET_MAX fails: 0 dB in 1/256 dB = 0. */
         const val DEFAULT_VOLUME_MAX: Short = 0
+
+        /**
+         * Hard ceiling for volume output, regardless of what the DAC reports as volumeMax.
+         *
+         * = -496 in 1/256 dB units = -1.94 dB attenuation = 0.8 linear gain.
+         *
+         * Rationale: 0 dB FS (full-scale) on a USB DAC with sensitive IEMs/headphones can
+         * produce 110+ dB SPL — well above the WHO safe-listening threshold (85 dB for
+         * prolonged exposure, 100 dB for short bursts). Without a ceiling, slider 100%
+         * sends raw 0 dB to the DAC, which can damage hearing and speakers.
+         *
+         * This constant caps the effective volumeMax so slider 100% never exceeds -1.94 dB.
+         * The ceiling is applied via minOf(volumeMax, CEILING_VOLUME_MAX) in setUsbVolume
+         * and getUsbVolume — both directions stay consistent for accurate round-trip.
+         *
+         * Bit-perfect preservation: This clamp affects only the UAC2 SET_CUR control
+         * value (hardware analog gain stage in the DAC). The PCM stream sent via USB
+         * isochronous transfers is NEVER modified — bit-perfect output is 100% preserved.
+         *
+         * Edge cases:
+         * - DAC with volumeMax < ceiling (e.g., -3 dB): minOf picks volumeMax, ceiling
+         *   is not forced upward — the DAC's natural max is respected.
+         * - DAC with volumeMax > ceiling (e.g., +6 dB gain stage): minOf picks ceiling,
+         *   hard-capping output at -1.94 dB even if the DAC could go louder.
+         * - DAC degenerate (volumeMin == volumeMax == 0): SET_CUR is sent with -496,
+         *   DAC may ignore (no-op) — no regression vs prior behavior.
+         */
+        const val CEILING_VOLUME_MAX: Short = -496
     }
 }
