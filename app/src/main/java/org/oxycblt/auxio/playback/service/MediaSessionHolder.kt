@@ -144,11 +144,7 @@ private constructor(
      * controls (hardware keys + slider + Bluetooth) route to the USB DAC's hardware Feature Unit
      * via UAC2 SET_CUR. Idempotent: if a provider is already registered, this is a no-op.
      *
-     * F-1 fix: Query the DAC's actual hardware volume via [UsbAudioDevice.getUsbVolume] and use
-     * it as the provider's initial volume. Previously, the provider always started at 100%
-     * (initialVolume = 1f), which caused the system slider to show 100% even if the DAC was
-     * at a lower hardware volume. If getUsbVolume() fails (returns -1f — no FU, GET_CUR error,
-     * or device not yet open), fall back to 1f (max) as before.
+     * F-1: Initial volume is queried from the DAC via [queryDacVolume] instead of hardcoded 1f.
      */
     private fun registerUsbVolumeProvider() {
         if (usbVolumeProvider != null) {
@@ -157,12 +153,11 @@ private constructor(
         }
         val cb = volumeCallback
         if (cb != null) {
-            // F-1: Query DAC's actual hardware volume for slider initialization
             val dacVolume = queryDacVolume()
             val provider = UsbDacVolumeProvider(onVolumeChanged = cb, initialVolume = dacVolume)
             usbVolumeProvider = provider
             mediaSession.setPlaybackToRemote(provider)
-            L.d("MediaSession: USB DAC mode active — registered UsbDacVolumeProvider (init=$dacVolume)")
+            L.d("MediaSession: USB DAC mode active — init=$dacVolume")
         } else {
             L.w("USB DAC active but volumeCallback null — volume keys won't adjust USB DAC")
             L.w("Set volumeCallback before attach() to enable USB DAC volume control")
