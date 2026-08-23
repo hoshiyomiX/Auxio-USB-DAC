@@ -32,9 +32,20 @@ import kotlin.math.sqrt
 class UsbAudioDevice private constructor(private val context: Context) {
 
     private var usbManager: UsbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
-    private var connection: UsbDeviceConnection? = null
-    private var currentDevice: UsbDevice? = null
-    private var claimedInterface: UsbInterface? = null
+    // P1 fix: All mutable fields below are accessed from multiple threads:
+    //   - Main thread: UsbDacConnectionMonitor.refreshConnectionState (findUsbAudioDevice)
+    //   - Background thread: UsbAudioPermissionHelper.handleIntent → Thread { openDevice }
+    //   - Renderer thread: UsbAudioSink.configure / handleBuffer / releaseUsbStream
+    //   - BroadcastReceiver thread: usbDetachedReceiver.onReceive → Thread { releaseUsbStream }
+    // Without @Volatile, changes made by one thread (e.g., openDevice setting
+    // `connection`) may not be visible to other threads (e.g., setUsbVolume reading
+    // `connection`) due to JMM's memory visibility rules — causing null checks to
+    // fail or stale cachedDeviceInfo to be used.
+    @Volatile private var connection: UsbDeviceConnection? = null
+    @Volatile private var currentDevice: UsbDevice? = null
+    @Volatile private var claimedInterface: UsbInterface? = null
+    @Volatile private var cachedDeviceInfo: UsbAudioDeviceInfo? = null
+    @Volatile private var parsedAltSettings: List<Pair<Int, Int>> = emptyList()
 
     companion object {
         private const val TAG = "UsbAudioDevice"
@@ -140,9 +151,6 @@ class UsbAudioDevice private constructor(private val context: Context) {
      * @param device The USB audio device to open.
      * @return Device info with fd and endpoint addresses, or null on failure.
      */
-    /** Cached device info from the last successful openDevice() call. */
-    private var cachedDeviceInfo: UsbAudioDeviceInfo? = null
-
     fun openDevice(device: UsbDevice): UsbAudioDeviceInfo? {
         // Return cached info if already open with valid connection
         val cached = cachedDeviceInfo
@@ -751,9 +759,6 @@ class UsbAudioDevice private constructor(private val context: Context) {
      *
      * @return Pair(altSetting, bitDepth), or Pair(1, 16) as default.
      */
-    /** Parsed alt setting: (altNumber, bitResolution) */
-    private var parsedAltSettings: List<Pair<Int, Int>> = emptyList()
-
     private fun parseBestAltSetting(conn: UsbDeviceConnection): Pair<Int, Int> {
         val raw = conn.rawDescriptors ?: return Pair(1, 16)
         val altSettings = mutableListOf<Pair<Int, Int>>()
@@ -889,8 +894,16 @@ class UsbAudioDevice private constructor(private val context: Context) {
                     0x10, 0x11, 0x12, 0x20, 0x21, 0x22)
         }
 
+        // N1 fix: Use the auto-detected AudioControl interface number for wIndex lower
+        // byte, instead of hardcoded 0. UAC2 spec requires wIndex = (entityId << 8) |
+        // audioControlInterfaceNumber. Some DACs use a non-zero AudioControl interface
+        // number — hardcoding 0 causes SET_CUR to fail silently on those DACs.
+        // Falls back to 0 when the interface number is unknown (e.g., device opened
+        // before parseFeatureUnitId ran, or parseFeatureUnitId returned -1).
+        val ifaceId = cachedDeviceInfo?.audioControlInterfaceId?.let { if (it >= 0) it else 0 } ?: 0
+
         for (csId in clockSourceIds) {
-            val wIndex = (csId shl 8) or 0  // entityId << 8 | audioControlInterface(0)
+            val wIndex = (csId shl 8) or (ifaceId and 0xFF)  // entityId << 8 | audioControlIface
             val ret = conn.controlTransfer(
                     0x21,    // bmRequestType: Host-to-Device, Class, Interface
                     0x01,    // bRequest: SET_CUR
@@ -901,7 +914,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
                     1000     // timeout ms
             )
             if (ret >= 0) {
-                Log.i(TAG, "setSampleRate($sampleRateHz Hz): SUCCESS with clockSourceId=0x${csId.toString(16)} (wIndex=0x${wIndex.toString(16)}, ret=$ret)")
+                Log.i(TAG, "setSampleRate($sampleRateHz Hz): SUCCESS with clockSourceId=0x${csId.toString(16)} iface=$ifaceId (wIndex=0x${wIndex.toString(16)}, ret=$ret)")
                 return true
             }
         }
@@ -921,8 +934,10 @@ class UsbAudioDevice private constructor(private val context: Context) {
         val detectedId = cachedDeviceInfo?.clockSourceId ?: -1
         val clockSourceIds = if (detectedId > 0) intArrayOf(detectedId)
                 else intArrayOf(0x05, 0x09, 0x0A, 0x0B, 0x0C, 0x28, 0x29)
+        // N1 fix: Use auto-detected AudioControl interface number (see setSampleRate).
+        val ifaceId = cachedDeviceInfo?.audioControlInterfaceId?.let { if (it >= 0) it else 0 } ?: 0
         for (csId in clockSourceIds) {
-            val wIndex = (csId shl 8) or 0
+            val wIndex = (csId shl 8) or (ifaceId and 0xFF)
             val ret = conn.controlTransfer(
                     0xA1,    // bmRequestType: Device-to-Host, Class, Interface
                     0x01,    // bRequest: GET_CUR (actually CUR is 0x01 for both)
@@ -961,8 +976,10 @@ class UsbAudioDevice private constructor(private val context: Context) {
         val detectedId = cachedDeviceInfo?.clockSourceId ?: -1
         val clockSourceIds = if (detectedId > 0) intArrayOf(detectedId)
                 else intArrayOf(0x05, 0x09, 0x0A, 0x0B, 0x0C, 0x28, 0x29)
+        // N1 fix: Use auto-detected AudioControl interface number (see setSampleRate).
+        val ifaceId = cachedDeviceInfo?.audioControlInterfaceId?.let { if (it >= 0) it else 0 } ?: 0
         for (csId in clockSourceIds) {
-            val wIndex = (csId shl 8) or 0
+            val wIndex = (csId shl 8) or (ifaceId and 0xFF)
             val ret = conn.controlTransfer(
                     0xA1,    // bmRequestType: Device-to-Host, Class, Interface
                     0x01,    // bRequest: GET_CUR
@@ -974,7 +991,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
             )
             if (ret >= 1) {
                 val valid = data[0].toInt() and 0x01
-                Log.i(TAG, "readClockValid: clockSourceId=0x${csId.toString(16)} valid=$valid")
+                Log.i(TAG, "readClockValid: clockSourceId=0x${csId.toString(16)} iface=$ifaceId valid=$valid")
                 return valid == 1
             }
         }
