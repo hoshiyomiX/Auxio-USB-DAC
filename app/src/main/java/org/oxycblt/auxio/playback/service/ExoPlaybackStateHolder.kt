@@ -630,7 +630,47 @@ class ExoPlaybackStateHolder(
             if (wasPlaying) {
                 usbDacResumeJob =
                     saveScope.launch {
-                        delay(USB_DAC_RESUME_DELAY_MS)
+                        // Poll for renderer + USB pipeline readiness instead of fixed delay.
+                        // After seekTo + trackSelectionParameters reassignment, ExoPlayer goes
+                        // through STATE_BUFFERING → STATE_READY. When STATE_READY is reached,
+                        // the renderer has been configured (configure() ran).
+                        //
+                        // For toggle ON, we also poll usbSink.isUsbPipelineReady — this ensures
+                        // the USB stream (UsbAudioStream) is alive AND the native engine or
+                        // streaming thread is ready to accept audio data. Resuming before this
+                        // causes the first audio buffers to hit a not-yet-ready pipeline → silence
+                        // or glitches.
+                        //
+                        // For toggle OFF, STATE_READY is sufficient — the delegate AudioTrack is
+                        // configured by ExoPlayer's DefaultAudioSink and doesn't need extra
+                        // initialization time.
+                        var polls = 0
+                        while (polls < USB_DAC_RESUME_MAX_POLLS) {
+                            delay(USB_DAC_RESUME_POLL_INTERVAL_MS)
+                            polls++
+                            val state = player.playbackState
+                            if (state == Player.STATE_IDLE || state == Player.STATE_ENDED) {
+                                L.w("Aborting resume — playback state=$state after $polls polls")
+                                return@launch
+                            }
+                            if (state != Player.STATE_READY) continue
+                            // STATE_READY reached. For toggle ON, also check USB pipeline.
+                            if (enabled && usbSink?.isUsbPipelineReady != true) {
+                                L.d(
+                                    "STATE_READY but USB pipeline not ready (poll $polls) — waiting"
+                                )
+                                continue
+                            }
+                            L.d(
+                                "Renderer + pipeline ready after $polls polls (${polls * USB_DAC_RESUME_POLL_INTERVAL_MS}ms)"
+                            )
+                            break
+                        }
+                        if (polls >= USB_DAC_RESUME_MAX_POLLS) {
+                            L.w(
+                                "Resume timeout after ${polls * USB_DAC_RESUME_POLL_INTERVAL_MS}ms — forcing play"
+                            )
+                        }
                         withContext(Dispatchers.Main) {
                             if (
                                 sessionOngoing &&
@@ -842,11 +882,11 @@ class ExoPlaybackStateHolder(
 
     private companion object {
         const val SAVE_BUFFER = 5000L
-        /**
-         * Delay before resuming playback after USB DAC mode toggle, in milliseconds. Gives the
-         * renderer time to flush + re-init the USB streaming thread / AudioTrack before play() is
-         * called. Too short → audio glitches; too long → feels sluggish.
-         */
-        const val USB_DAC_RESUME_DELAY_MS = 300L
+        // Polling interval for USB DAC resume readiness check, in milliseconds.
+        const val USB_DAC_RESUME_POLL_INTERVAL_MS = 100L
+        // Maximum number of polls before forcing resume (timeout).
+        // 50 × 100ms = 5s max wait. If the renderer + USB pipeline aren't ready after
+        // 5 seconds, we force play anyway — better than hanging indefinitely.
+        const val USB_DAC_RESUME_MAX_POLLS = 50
     }
 }

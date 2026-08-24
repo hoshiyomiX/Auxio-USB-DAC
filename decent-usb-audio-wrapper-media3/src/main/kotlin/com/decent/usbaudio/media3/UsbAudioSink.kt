@@ -218,6 +218,12 @@ class UsbAudioSink(
 
     private var usbAudioStream: UsbAudioStream? = null
     private val usbAudioDevice = UsbAudioDevice.getInstance(context)
+
+    // True when the USB pipeline is ready to produce audio: USB stream is alive OR a native
+    // engine (FLAC/Opus) is running. Polled by ExoPlaybackStateHolder after toggle ON to
+    // determine when to resume playback — avoids resuming before the USB stream is ready.
+    val isUsbPipelineReady: Boolean
+        get() = (bitPerfectEnabled && usbAudioStream?.isAlive == true) || isNativeEngineActive
     /** Product name of the currently-opened USB DAC (e.g. "Topping DX3 Pro+"). Null when no device is open.
      *  Captured at [configureUsbStream] time from [UsbAudioDeviceInfo.deviceName] and surfaced via
      *  [snapshotAudioInfo] for the audio info overlay. */
