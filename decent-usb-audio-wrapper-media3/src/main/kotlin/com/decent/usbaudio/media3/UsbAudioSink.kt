@@ -372,6 +372,12 @@ class UsbAudioSink(
                                 val pos = player.currentPosition
                                 Timber.tag(TAG).i("Reconfigure seekTo($pos) after permission grant")
                                 player.seekTo(pos)
+                                // Force renderer reconfigure by re-applying track selection
+                                // parameters. Without this, seekTo alone does NOT trigger
+                                // configure() when the track format hasn't changed — leaving
+                                // usbAudioStream null and volume control broken until the
+                                // next track change or toggle event.
+                                player.trackSelectionParameters = player.trackSelectionParameters
                             }
                         }
                     } else {
