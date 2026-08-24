@@ -39,6 +39,9 @@
     <string name="set_key_usb_dac_mode" translatable="false">auxio_usb_dac_mode</string>
     <string name="set_key_audio_info_overlay" translatable="false">auxio_audio_info_overlay</string>
 
+    <!-- Debug logging -->
+    <string name="set_key_debug_logs" translatable="false">auxio_debug_logs</string>
+
     <string name="set_key_play_in_list_with" translatable="false">auxio_play_in_list_with</string>
     <string name="set_key_play_in_parent_with" translatable="false">auxio_play_in_parent_with</string>
     <string name="set_key_keep_shuffle" translatable="false">KEY_KEEP_SHUFFLE</string>

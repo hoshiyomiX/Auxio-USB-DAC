@@ -90,6 +90,10 @@ class RootPreferenceFragment : BasePreferenceFragment(R.xml.preferences_root) {
             }
             getString(R.string.set_key_reindex) -> musicModel.refresh()
             getString(R.string.set_key_rescan) -> musicModel.rescan()
+            getString(R.string.set_key_debug_logs) -> {
+                L.d("Navigating to debug log viewer")
+                findNavController().navigateSafe(RootPreferenceFragmentDirections.debugLogs())
+            }
             else -> return super.onPreferenceTreeClick(preference)
         }
 

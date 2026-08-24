@@ -216,6 +216,23 @@
     <string name="lng_playlist_created">Daftar putar dibuat</string>
     <string name="lng_playlist_added">Ditambahkan ke daftar putar</string>
     <string name="set_rescan_desc">Bersihkan cache tag dan muat ulang perpustakaan musik secara penuh (lebih lambat, tetapi lebih sempurna)</string>
+
+    <!-- Debug Namespace | Debug Labels -->
+    <string name="set_debug">Debug</string>
+    <string name="set_debug_logs">Log debug</string>
+    <string name="set_debug_logs_desc">Lihat tangkapan log Timber dalam aplikasi untuk pemecahan masalah USB DAC</string>
+    <string name="set_log_viewer_title">Log debug</string>
+    <string name="set_log_viewer_empty">Belum ada entri log. Interaksi dengan aplikasi (putar musik, atur volume, sambungkan USB DAC) untuk menghasilkan log.</string>
+    <string name="set_log_viewer_not_planted">Pohon log debug tidak diinisialisasi. Mulai ulang aplikasi.</string>
+    <string name="set_log_viewer_copy">Salin semua log</string>
+    <string name="set_log_viewer_export">Ekspor ke file</string>
+    <string name="set_log_viewer_clear">Bersihkan log</string>
+    <string name="set_log_viewer_copied">Menyalin %1$d entri log ke papan klip</string>
+    <string name="set_log_viewer_cleared">Buffer log dibersihkan</string>
+    <string name="set_log_viewer_export_chooser">Bagikan log debug</string>
+    <string name="set_log_viewer_export_failed">Ekspor gagal: %1$s</string>
+    <string name="set_log_viewer_status">%1$d / %2$d entri</string>
+    <string name="set_log_viewer_status_full">Buffer penuh: %1$d / %2$d entri (terlama dihapus)</string>
     <string name="lbl_imported_playlist">Daftar putar yang diimpor</string>
     <string name="lng_playlist_imported">Daftar putar diimpor</string>
     <string name="lng_playlist_exported">Daftar putar diekspor</string>

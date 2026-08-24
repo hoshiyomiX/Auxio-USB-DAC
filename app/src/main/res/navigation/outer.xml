@@ -36,6 +36,9 @@
         <action
             android:id="@+id/music_locations_settings"
             app:destination="@id/music_locations_dialog" />
+        <action
+            android:id="@+id/debug_logs"
+            app:destination="@id/log_viewer_fragment" />
     </fragment>
 
     <fragment
@@ -105,4 +108,10 @@
         android:name="org.oxycblt.auxio.settings.AboutFragment"
         android:label="dialog_about"
         tools:layout="@layout/fragment_about" />
+
+    <fragment
+        android:id="@+id/log_viewer_fragment"
+        android:name="org.oxycblt.auxio.debug.LogViewerFragment"
+        android:label="log_viewer_fragment"
+        tools:layout="@layout/fragment_log_viewer" />
 </navigation>

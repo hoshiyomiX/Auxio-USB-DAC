@@ -45,4 +45,12 @@
 
     </PreferenceCategory>
 
+    <PreferenceCategory app:title="@string/set_debug">
+        <Preference
+            app:icon="@drawable/ic_about_24"
+            app:key="@string/set_key_debug_logs"
+            app:summary="@string/set_debug_logs_desc"
+            app:title="@string/set_debug_logs" />
+    </PreferenceCategory>
+
 </PreferenceScreen>

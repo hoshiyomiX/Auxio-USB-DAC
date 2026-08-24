@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~ Copyright (c) 2026 Auxio Project
+  ~ item_debug_log.xml is part of Auxio.
+  ~
+  ~ Single log entry row in the debug log RecyclerView. Monospace font for alignment.
+  ~ Color is applied programmatically in DebugLogAdapter based on log level.
+  -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingHorizontal="@dimen/spacing_medium"
+    android:paddingVertical="@dimen/spacing_tiny">
+
+    <TextView
+        android:id="@+id/log_header"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:fontFamily="monospace"
+        android:textAppearance="?attr/textAppearanceBodySmall"
+        android:textSize="11sp"
+        tools:text="12:34:56.789 D/UsbAudioDevice"
+        xmlns:tools="http://schemas.android.com/tools" />
+
+    <TextView
+        android:id="@+id/log_message"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:fontFamily="monospace"
+        android:textAppearance="?attr/textAppearanceBodySmall"
+        android:textSize="11sp"
+        android:textIsSelectable="true"
+        tools:text="setUsbVolume: linear=0.5 → dbFixed=-4099"
+        xmlns:tools="http://schemas.android.com/tools" />
+
+</LinearLayout>

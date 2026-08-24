@@ -25,6 +25,7 @@ import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
+import org.oxycblt.auxio.debug.DebugLogTree
 import org.oxycblt.auxio.home.HomeSettings
 import org.oxycblt.auxio.image.ImageSettings
 import org.oxycblt.auxio.playback.PlaybackSettings
@@ -55,6 +56,12 @@ class Auxio : Application() {
         } else if (BuildConfig.DEBUG) {
             Timber.plant(Timber.DebugTree())
         }
+
+        // In-built debug log capture (no root, no READ_LOGS permission needed).
+        // Always planted (default ON per user request) — captures all Timber.d/i/w/e
+        // calls into a 5000-entry ring buffer accessible via Settings > Debug Logs.
+        // See DebugLogTree.kt for buffer sizing rationale.
+        DebugLogTree.plant()
 
         // Migrate any settings that may have changed in an app update.
         imageSettings.migrate()

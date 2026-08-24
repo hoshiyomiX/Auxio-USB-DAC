@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~ Copyright (c) 2026 Auxio Project
+  ~ menu/log_viewer.xml is part of Auxio.
+  ~
+  ~ Toolbar menu for the log viewer: Copy all, Export to file, Clear.
+  -->
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/action_copy"
+        android:icon="@drawable/ic_copy_24"
+        android:title="@string/set_log_viewer_copy"
+        app:showAsAction="ifRoom" />
+
+    <item
+        android:id="@+id/action_export"
+        android:icon="@drawable/ic_save_24"
+        android:title="@string/set_log_viewer_export"
+        app:showAsAction="ifRoom" />
+
+    <item
+        android:id="@+id/action_clear"
+        android:icon="@drawable/ic_delete_24"
+        android:title="@string/set_log_viewer_clear"
+        app:showAsAction="ifRoom" />
+
+</menu>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~ Copyright (c) 2026 Auxio Project
+  ~ file_paths.xml is part of Auxio.
+  ~
+  ~ FileProvider path configuration for sharing debug log .txt files.
+  ~ Only exposes the app's cache directory — no other internal storage.
+  -->
+<paths>
+    <!-- Cache directory: used by LogViewerFragment to write exported .txt logs. -->
+    <cache-path
+        name="debug_logs"
+        path="." />
+</paths>

@@ -363,6 +363,23 @@
     <string name="set_rescan">Rescan music</string>
     <string name="set_rescan_desc">Clear the tag cache and fully reload the music library (slower, but more complete)</string>
 
+    <!-- Debug Namespace | Debug Labels -->
+    <string name="set_debug">Debug</string>
+    <string name="set_debug_logs">Debug logs</string>
+    <string name="set_debug_logs_desc">View in-app Timber log capture for USB DAC troubleshooting</string>
+    <string name="set_log_viewer_title">Debug logs</string>
+    <string name="set_log_viewer_empty">No log entries yet. Interact with the app (play music, adjust volume, connect USB DAC) to generate logs.</string>
+    <string name="set_log_viewer_not_planted">Debug log tree is not initialized. Restart the app.</string>
+    <string name="set_log_viewer_copy">Copy all logs</string>
+    <string name="set_log_viewer_export">Export to file</string>
+    <string name="set_log_viewer_clear">Clear logs</string>
+    <string name="set_log_viewer_copied">Copied %1$d log entries to clipboard</string>
+    <string name="set_log_viewer_cleared">Log buffer cleared</string>
+    <string name="set_log_viewer_export_chooser">Share debug log</string>
+    <string name="set_log_viewer_export_failed">Export failed: %1$s</string>
+    <string name="set_log_viewer_status">%1$d / %2$d entries</string>
+    <string name="set_log_viewer_status_full">Buffer full: %1$d / %2$d entries (oldest evicted)</string>
+
     <!-- Error Namespace | Error Labels -->
     <string name="err_index_failed">Music loading failed</string>
     <string name="err_import_failed">Unable to import a playlist from this file</string>
