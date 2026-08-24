@@ -562,8 +562,21 @@ class UsbAudioDevice private constructor(private val context: Context) {
 
         val clamped = volume.coerceIn(0f, 1f)
         val raw16: Short = if (clamped <= 0f) {
-            // Mute: 0x8000 (-∞ dB)
-            (-32768).toShort()
+            // Volume 0%: send the effective minimum volume (safeMin) instead of 0x8000 (mute).
+            // Some buggy DACs (e.g., CX31993) interpret 0x8000 as "reset to peak" instead of
+            // "mute", causing 0% to produce PEAK volume instead of silence. Sending the
+            // effective minimum (-50 dB by default) produces near-silence without triggering
+            // the buggy 0x8000 reset behavior.
+            val minFixed0 = maxOf(
+                (info?.volumeMin ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN).toInt(),
+                UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN.toInt()
+            )
+            val maxFixed0 = minOf(
+                (info?.volumeMax ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MAX).toInt(),
+                UsbAudioDeviceInfo.CEILING_VOLUME_MAX.toInt()
+            )
+            val safeMin0 = if (minFixed0 < maxFixed0) minFixed0 else UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN.toInt()
+            safeMin0.toShort()
         } else {
             // Apply perceptual sqrt() warp so low slider positions produce audible output
             // (the linear-dB mapping alone made the bottom 30% of the slider inaudible).
