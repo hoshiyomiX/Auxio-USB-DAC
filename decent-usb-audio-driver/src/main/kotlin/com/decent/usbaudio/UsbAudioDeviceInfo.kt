@@ -36,6 +36,7 @@ data class UsbAudioDeviceInfo(
     val audioControlInterfaceId: Int = 0,
     val volumeMin: Short = DEFAULT_VOLUME_MIN,
     val volumeMax: Short = DEFAULT_VOLUME_MAX,
+    val volumeRangeQueryFailed: Boolean = false,
 ) {
     companion object {
         /**

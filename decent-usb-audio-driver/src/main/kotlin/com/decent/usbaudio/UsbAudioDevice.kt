@@ -281,11 +281,11 @@ class UsbAudioDevice private constructor(private val context: Context) {
         // Query the DAC's actual hardware volume range via GET_MIN/GET_MAX.
         // This prevents sending SET_CUR values outside the DAC's supported range,
         // which was the root cause of the "0-90% silence, 90-100% max" volume bug.
-        val (volumeMin, volumeMax) = if (featureUnitId >= 0 && audioControlIfaceId >= 0) {
+        val (volumeMin, volumeMax, volumeRangeFailed) = if (featureUnitId >= 0 && audioControlIfaceId >= 0) {
             queryVolumeRange(conn, featureUnitId, audioControlIfaceId)
         } else {
             Timber.tag(TAG).w("Skipping volume range query — no Feature Unit or AudioControl interface")
-            Pair(UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN, UsbAudioDeviceInfo.DEFAULT_VOLUME_MAX)
+            Triple(UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN, UsbAudioDeviceInfo.DEFAULT_VOLUME_MAX, false)
         }
 
         val info = UsbAudioDeviceInfo(
@@ -303,7 +303,8 @@ class UsbAudioDevice private constructor(private val context: Context) {
                 bestBitDepth = bestBits,
                 audioControlInterfaceId = if (audioControlIfaceId >= 0) audioControlIfaceId else 0,
                 volumeMin = volumeMin,
-                volumeMax = volumeMax
+                volumeMax = volumeMax,
+                volumeRangeQueryFailed = volumeRangeFailed
         )
         cachedDeviceInfo = info
         return info
@@ -444,78 +445,104 @@ class UsbAudioDevice private constructor(private val context: Context) {
      * outside the DAC's supported range, which can cause the DAC to mute entirely — the
      * root cause of the "0-90% = silence, 90-100% = max" volume bug.
      */
-    private fun queryVolumeRange(conn: UsbDeviceConnection, fuId: Int, ifaceId: Int): Pair<Short, Short> {
-        val wValue = 0x0100  // CS=0x01 (VOLUME_CONTROL), CN=0x00 (master channel)
+    private fun queryVolumeRange(conn: UsbDeviceConnection, fuId: Int, ifaceId: Int): Triple<Short, Short, Boolean> {
+        val wValue = 0x0100
         val wIndex = (fuId shl 8) or (ifaceId and 0xFF)
 
         var minVal: Short = UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN
         var maxVal: Short = UsbAudioDeviceInfo.DEFAULT_VOLUME_MAX
+        var minFailed = false
+        var maxFailed = false
 
         // GET_MIN (bRequest = 0x82)
         val minData = ByteArray(2)
         val minRet = conn.controlTransfer(
-            0xA1,    // bmRequestType: Device-to-Host, Class, Interface
-            0x82,    // bRequest: GET_MIN
-            wValue, wIndex, minData, minData.size, 500
+            0xA1, 0x82, wValue, wIndex, minData, minData.size, 500
         )
         if (minRet >= 2) {
             val raw = ((minData[1].toInt() and 0xFF) shl 8) or (minData[0].toInt() and 0xFF)
             val signed = raw.toShort()
-            // Only use the queried value if it's strictly negative (attenuation). A min of 0
-            // is nonsensical — it would mean "0 dB is the minimum", implying the DAC has no
-            // attenuation capability at all. Some buggy DACs report min=0/max=0, which
-            // previously caused an inverted range in setUsbVolume (minFixed > maxFixed after
-            // the ceiling clamp), producing the "0% peak, 1-100% no sound" bug.
             if (signed < 0) {
-                // Clamp to 0x8001 (-32767, -127.99 dB) — 0x8000 (-32768) is the UAC2 mute
-                // value and must not be used as the minimum non-mute volume.
                 minVal = if (signed <= -32768) -32767 else signed
                 val db = minVal.toDouble() / 256.0
                 Timber.tag(TAG).i("queryVolumeRange: GET_MIN = $signed → clamped to $minVal " +
                         "(0x${(minVal.toInt() and 0xFFFF).toString(16)}) = ${"%.2f".format(db)} dB")
             } else {
+                minFailed = true
                 Timber.tag(TAG).w("queryVolumeRange: GET_MIN returned non-negative value $signed — using default")
             }
         } else {
+            minFailed = true
             Timber.tag(TAG).w("queryVolumeRange: GET_MIN failed (ret=$minRet) — using default min = -50 dB")
         }
 
         // GET_MAX (bRequest = 0x83)
         val maxData = ByteArray(2)
         val maxRet = conn.controlTransfer(
-            0xA1,    // bmRequestType: Device-to-Host, Class, Interface
-            0x83,    // bRequest: GET_MAX
-            wValue, wIndex, maxData, maxData.size, 500
+            0xA1, 0x83, wValue, wIndex, maxData, maxData.size, 500
         )
         if (maxRet >= 2) {
             val raw = ((maxData[1].toInt() and 0xFF) shl 8) or (maxData[0].toInt() and 0xFF)
             val signed = raw.toShort()
-            // Max should be >= 0 (0 dB = unity, or positive for gain). Use the queried value.
             if (signed >= 0) {
                 maxVal = signed
                 val db = signed.toDouble() / 256.0
                 Timber.tag(TAG).i("queryVolumeRange: GET_MAX = $signed (0x${(raw and 0xFFFF).toString(16)}) = ${"%.2f".format(db)} dB")
             } else {
+                maxFailed = true
                 Timber.tag(TAG).w("queryVolumeRange: GET_MAX returned negative value $signed — using default")
             }
         } else {
+            maxFailed = true
             Timber.tag(TAG).w("queryVolumeRange: GET_MAX failed (ret=$maxRet) — using default max = 0 dB")
         }
 
-        // Degenerate-range detection: if minVal >= maxVal, the DAC reported a nonsensical
-        // range (e.g., both 0, or min > max). This would invert the volume math in
-        // setUsbVolume, producing the "0% peak, 1-100% no sound" bug. Reset to safe
-        // defaults so the slider works correctly even on misbehaving DACs.
+        // GET_RES (bRequest = 0x84) — resolution step. Some DACs support this even
+        // when GET_MIN/GET_MAX fail. If it succeeds, the DAC DOES implement volume
+        // control — we just need to figure out the right format.
+        val resData = ByteArray(2)
+        val resRet = conn.controlTransfer(
+            0xA1, 0x84, wValue, wIndex, resData, resData.size, 500
+        )
+        if (resRet >= 2) {
+            val resRaw = ((resData[1].toInt() and 0xFF) shl 8) or (resData[0].toInt() and 0xFF)
+            Timber.tag(TAG).i("queryVolumeRange: GET_RES = $resRaw (0x${resRaw.toString(16)}) — DAC supports volume resolution")
+        } else {
+            Timber.tag(TAG).w("queryVolumeRange: GET_RES failed (ret=$resRet)")
+        }
+
+        // GET_CUR (bRequest = 0x81) — read current volume. This tells us what format
+        // the DAC uses internally. If the DAC reports a non-zero value here, it's
+        // likely using unsigned linear format, not signed dB.
+        val curData = ByteArray(2)
+        val curRet = conn.controlTransfer(
+            0xA1, 0x81, wValue, wIndex, curData, curData.size, 500
+        )
+        if (curRet >= 2) {
+            val curRaw = ((curData[1].toInt() and 0xFF) shl 8) or (curData[0].toInt() and 0xFF)
+            val curSigned = curRaw.toShort()
+            val curUnsigned = curRaw and 0xFFFF
+            Timber.tag(TAG).i("queryVolumeRange: GET_CUR = signed=$curSigned unsigned=$curUnsigned (0x${curRaw.toString(16)})" +
+                    " — current DAC volume level")
+        } else {
+            Timber.tag(TAG).w("queryVolumeRange: GET_CUR failed (ret=$curRet)")
+        }
+
+        val bothFailed = minFailed && maxFailed
+        if (bothFailed) {
+            Timber.tag(TAG).w("queryVolumeRange: BOTH GET_MIN and GET_MAX failed — DAC likely uses" +
+                    " unsigned linear volume format (0x0000=mute, 0x7FFF=max). Will use unsigned format in setUsbVolume.")
+        }
+
+        // Degenerate-range detection
         if (minVal >= maxVal) {
-            Timber.tag(TAG).w("queryVolumeRange: degenerate range [$minVal, $maxVal] " +
-                    "(min >= max) — resetting to defaults [-12800, 0] (-50 dB to 0 dB)")
+            Timber.tag(TAG).w("queryVolumeRange: degenerate range [$minVal, $maxVal] — resetting to defaults")
             minVal = UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN
             maxVal = UsbAudioDeviceInfo.DEFAULT_VOLUME_MAX
         }
 
-        Timber.tag(TAG).i("queryVolumeRange: final range = [${minVal}, ${maxVal}] " +
-                "(${"%.2f".format(minVal.toDouble()/256.0)} dB to ${"%.2f".format(maxVal.toDouble()/256.0)} dB)")
-        return Pair(minVal, maxVal)
+        Timber.tag(TAG).i("queryVolumeRange: final range = [${minVal}, ${maxVal}] rangeQueryFailed=$bothFailed")
+        return Triple(minVal, maxVal, bothFailed)
     }
 
     /**
@@ -561,120 +588,98 @@ class UsbAudioDevice private constructor(private val context: Context) {
         }
 
         val clamped = volume.coerceIn(0f, 1f)
-        val raw16: Short = if (clamped <= 0f) {
-            // Volume 0%: send the effective minimum volume (safeMin) instead of 0x8000 (mute).
-            // Some buggy DACs (e.g., CX31993) interpret 0x8000 as "reset to peak" instead of
-            // "mute", causing 0% to produce PEAK volume instead of silence. Sending the
-            // effective minimum (-50 dB by default) produces near-silence without triggering
-            // the buggy 0x8000 reset behavior.
-            val minFixed0 = maxOf(
-                (info?.volumeMin ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN).toInt(),
-                UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN.toInt()
-            )
-            val maxFixed0 = minOf(
-                (info?.volumeMax ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MAX).toInt(),
-                UsbAudioDeviceInfo.CEILING_VOLUME_MAX.toInt()
-            )
-            val safeMin0 = if (minFixed0 < maxFixed0) minFixed0 else UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN.toInt()
-            safeMin0.toShort()
-        } else {
-            // Apply perceptual sqrt() warp so low slider positions produce audible output
-            // (the linear-dB mapping alone made the bottom 30% of the slider inaudible).
-            val warped = sqrt(clamped.toDouble())
-            // Map warped 0..1 to the DAC's actual [volumeMin, volumeMax] range using a
-            // linear-dB curve across the warped value:
-            //   dbFixed = volumeMax + (volumeMin - volumeMax) * (1 - warped)
-            //   warped = 1.0 → dbFixed = volumeMax (max, typically 0 dB)
-            //   warped = 0.0 → dbFixed = volumeMin (would be mute, but we handle 0.0 above)
-            //
-            // R-1 fix: Clamp the effective minimum to DEFAULT_VOLUME_MIN (-50 dB) even if
-            // the DAC reports a wider range (e.g., -127.99 dB for full UAC2 compliance).
-            // Without this clamp, wide-range DACs push all audible volume into the upper
-            // half of the slider — the original "0%-middle off, sudden peak at middle"
-            // bug. -50 dB is the practical inaudibility threshold for consumer
-            // headphones/IEMs; anything below it wastes slider real estate.
-            //
-            // Note: DEFAULT_VOLUME_MIN is declared as Short (UAC2 volume is signed 16-bit),
-            // but minFixed is Int (for arithmetic with maxFixed). Convert both operands to
-            // Int before maxOf to avoid Kotlin's "no overload for maxOf(Int, Short)" error.
-            val minFixed = maxOf(
-                (info?.volumeMin ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN).toInt(),
-                UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN.toInt()
-            )
-            // R-2 ceiling fix: Hard-cap effective volumeMax at CEILING_VOLUME_MAX (-1.94 dB
-            // = 0.8 linear gain) so slider 100% never sends raw 0 dB to the DAC. This
-            // protects hearing/speakers on sensitive IEMs/headphones where 0 dB FS can
-            // produce 110+ dB SPL. minOf picks the lower of (DAC's actual volumeMax,
-            // ceiling) — if DAC max is already below ceiling (e.g., -3 dB), respect it;
-            // if DAC supports >ceiling (e.g., +6 dB gain stage), hard-cap at ceiling.
-            //
-            // Bit-perfect preserved: SET_CUR controls DAC's analog gain stage, NOT the
-            // PCM stream. PCM data sent via USB isochronous transfers is untouched.
-            val maxFixed = minOf(
-                (info?.volumeMax ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MAX).toInt(),
-                UsbAudioDeviceInfo.CEILING_VOLUME_MAX.toInt()
-            )
-            // Safety guard: if minFixed >= maxFixed (can happen if cachedDeviceInfo has a
-            // degenerate range that wasn't caught by queryVolumeRange — e.g., the device
-            // was opened before the fix, or the cached info is stale), reset to safe
-            // defaults. Without this guard, the ratio math below produces inverted volume
-            // (low slider → high dB, high slider → low dB) and the coerceIn at the end
-            // either no-ops or pushes everything to maxFixed.
-            val safeMin: Int
-            val safeMax: Int
-            if (minFixed < maxFixed) {
-                safeMin = minFixed
-                safeMax = maxFixed
-            } else {
-                Timber.tag(TAG).w("setUsbVolume: degenerate range [$minFixed, $maxFixed] " +
-                        "(min >= max) — using defaults [-12800, -496]")
-                safeMin = UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN.toInt()
-                safeMax = UsbAudioDeviceInfo.CEILING_VOLUME_MAX.toInt()
-            }
-            val ratio = (1.0 - warped)  // 0.0 at max, 1.0 at min
-            val dbFixed = safeMax + ((safeMin - safeMax) * ratio).toInt()
-            // Clamp to the effective range to be safe
-            val clampedFixed = dbFixed.coerceIn(safeMin, safeMax)
-            clampedFixed.toShort()
-        }
-
-        // UAC2 SET_CUR for Feature Unit volume control:
-        //   bmRequestType = 0x21 (Host-to-Device, Class, Interface)
-        //   bRequest      = 0x01 (SET_CUR)
-        //   wValue        = (CS << 8) | CN = 0x0100 (FU_VOLUME_CONTROL=0x01, channel 0=master)
-        //   wIndex        = (entityId << 8) | interfaceNumber
-        //   data          = 2-byte LE signed 16-bit volume
-        val data = ByteArray(2)
-        data[0] = (raw16.toInt() and 0xFF).toByte()
-        data[1] = ((raw16.toInt() shr 8) and 0xFF).toByte()
-
-        val wValue = 0x0100  // CS=0x01 (VOLUME_CONTROL), CN=0x00 (master channel)
-        // Use the actual AudioControl interface number (was hardcoded to 0, which caused
-        // SET_CUR to fail on DACs where the AudioControl interface is not 0).
+        val wValue = 0x0100
         val ifaceId = info?.audioControlInterfaceId ?: 0
         val wIndex = (fuId shl 8) or (ifaceId and 0xFF)
 
+        // Determine volume format: if GET_MIN/GET_MAX both failed, the DAC likely uses
+        // unsigned linear format (0x0000=mute, 0x7FFF=max) instead of UAC2 signed dB.
+        // Neutron Music Player confirms CX31993 supports HW volume — we were just sending
+        // the wrong format (signed dB when DAC expects unsigned linear).
+        val useUnsignedLinear = info?.volumeRangeQueryFailed == true
+
+        val raw16: Int = if (useUnsignedLinear) {
+            // Unsigned linear: 0x0000 (0%) to 0x7FFF (100%).
+            // Apply sqrt warp for perceptual taper (same as signed dB path).
+            val warped = if (clamped <= 0f) 0.0 else sqrt(clamped.toDouble())
+            val unsignedVal = (warped * 0x7FFF).toInt().coerceIn(0, 0x7FFF)
+            Timber.tag(TAG).d("setUsbVolume: UNSIGNED LINEAR linear=$clamped → warped=${"%.4f".format(warped)}" +
+                    " → raw=0x${unsignedVal.toString(16)} (unsigned)")
+            unsignedVal
+        } else {
+            // Signed dB format (UAC2 standard). Original code path.
+            if (clamped <= 0f) {
+                val minFixed0 = maxOf(
+                    (info?.volumeMin ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN).toInt(),
+                    UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN.toInt()
+                )
+                val maxFixed0 = minOf(
+                    (info?.volumeMax ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MAX).toInt(),
+                    UsbAudioDeviceInfo.CEILING_VOLUME_MAX.toInt()
+                )
+                val safeMin0 = if (minFixed0 < maxFixed0) minFixed0 else UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN.toInt()
+                safeMin0
+            } else {
+                val warped = sqrt(clamped.toDouble())
+                val minFixed = maxOf(
+                    (info?.volumeMin ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN).toInt(),
+                    UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN.toInt()
+                )
+                val maxFixed = minOf(
+                    (info?.volumeMax ?: UsbAudioDeviceInfo.DEFAULT_VOLUME_MAX).toInt(),
+                    UsbAudioDeviceInfo.CEILING_VOLUME_MAX.toInt()
+                )
+                val safeMin: Int
+                val safeMax: Int
+                if (minFixed < maxFixed) {
+                    safeMin = minFixed
+                    safeMax = maxFixed
+                } else {
+                    Timber.tag(TAG).w("setUsbVolume: degenerate range [$minFixed, $maxFixed] — using defaults")
+                    safeMin = UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN.toInt()
+                    safeMax = UsbAudioDeviceInfo.CEILING_VOLUME_MAX.toInt()
+                }
+                val ratio = (1.0 - warped)
+                val dbFixed = safeMax + ((safeMin - safeMax) * ratio).toInt()
+                dbFixed.coerceIn(safeMin, safeMax)
+            }
+        }
+
+        val data = ByteArray(2)
+        data[0] = (raw16 and 0xFF).toByte()
+        data[1] = ((raw16 shr 8) and 0xFF).toByte()
+
+        val formatStr = if (useUnsignedLinear) "UNSIGNED" else "SIGNED_DB"
         val dbValue = raw16.toDouble() / 256.0
-        Timber.tag(TAG).d("setUsbVolume: linear=$clamped → dbFixed=$raw16 (${"%.2f".format(dbValue)}" +
-                " dB), range=[${info?.volumeMin}, ${info?.volumeMax}], " +
-                "fuId=0x${fuId.toString(16)}, iface=$ifaceId")
+        Timber.tag(TAG).d("setUsbVolume: linear=$clamped format=$formatStr raw=0x${(raw16 and 0xFFFF).toString(16)}" +
+                " (${if (useUnsignedLinear) "unsigned=$raw16" else "%.2f dB".format(dbValue)})," +
+                " range=[${info?.volumeMin}, ${info?.volumeMax}], fuId=0x${fuId.toString(16)}, iface=$ifaceId")
 
         val ret = conn.controlTransfer(
-                0x21,    // bmRequestType: Host-to-Device, Class, Interface
-                0x01,    // bRequest: SET_CUR
-                wValue,
-                wIndex,
-                data,
-                data.size,
-                500      // timeout ms (shorter than sample rate — volume is non-critical)
+                0x21, 0x01, wValue, wIndex, data, data.size, 500
         )
         if (ret >= 0) {
-            Timber.tag(TAG).i("setUsbVolume($volume → $clamped, raw=0x${(raw16.toInt() and 0xFFFF).toString(16)}): " +
+            Timber.tag(TAG).i("setUsbVolume($volume → $clamped, raw=0x${(raw16 and 0xFFFF).toString(16)}, fmt=$formatStr): " +
                     "SUCCESS with featureUnitId=0x${fuId.toString(16)}, iface=$ifaceId")
+
+            // Verify with GET_CUR — read back the value the DAC actually stored.
+            // If it matches what we sent, the DAC is implementing volume control.
+            // If it differs, the DAC may be ignoring SET_CUR or using a different format.
+            val verifyData = ByteArray(2)
+            val verifyRet = conn.controlTransfer(
+                0xA1, 0x81, wValue, wIndex, verifyData, verifyData.size, 500
+            )
+            if (verifyRet >= 2) {
+                val verifyRaw = ((verifyData[1].toInt() and 0xFF) shl 8) or (verifyData[0].toInt() and 0xFF)
+                val match = verifyRaw == (raw16 and 0xFFFF)
+                Timber.tag(TAG).i("setUsbVolume: GET_CUR verify = 0x${verifyRaw.toString(16)}" +
+                        " (sent=0x${(raw16 and 0xFFFF).toString(16)}, match=$match)")
+            } else {
+                Timber.tag(TAG).w("setUsbVolume: GET_CUR verify failed (ret=$verifyRet) — DAC may not support readback")
+            }
             return true
         }
-        Timber.tag(TAG).w("setUsbVolume($volume): SET_CUR failed (ret=$ret) — DAC may not support hardware volume " +
-                "or the value is outside its range")
+        Timber.tag(TAG).w("setUsbVolume($volume): SET_CUR failed (ret=$ret) — DAC may not support hardware volume")
         return false
     }
 
