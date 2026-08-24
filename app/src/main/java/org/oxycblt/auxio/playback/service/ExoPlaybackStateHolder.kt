@@ -601,20 +601,32 @@ class ExoPlaybackStateHolder(
 
         usbSink?.setBitPerfectEnabled(enabled)
         // Force the audio renderer to re-configure so the new bitPerfectEnabled value
-        // is honored on the current track. seekTo(currentPosition) flushes the renderer
-        // and triggers a fresh configure() call on the next buffer.
+        // is honored on the current track.
         //
         // Bug fix (2026-08-23): previously, this only called seekTo() without pausing
         // first. The renderer reconfigure happened while playback was active, causing
         // audio glitches (clicks, dropped frames, or no audible transition). Now we
         // pause before the seek, then resume after a short delay (300ms) to let the
         // renderer fully flush and re-init the USB streaming thread / AudioTrack.
+        //
+        // Bug fix (2026-08-24): seekTo(pos) alone does NOT trigger renderer reconfigure
+        // when the track format hasn't changed (same codec, same sample rate). ExoPlayer
+        // optimizes by keeping the existing renderer, which was configured for the
+        // PREVIOUS bitPerfectEnabled state. After toggle ON, usbAudioStream stays null
+        // (released during toggle OFF) and configure() never runs to recreate it.
+        // Fix: after seekTo, force track re-selection by re-setting the track selection
+        // parameters. This makes ExoPlayer re-select the audio track, which triggers a
+        // fresh configure() call on the renderer.
         if (sessionOngoing) {
             val wasPlaying = player.isPlaying
             val pos = player.currentPosition
             L.d("Pausing for renderer reconfigure (wasPlaying=$wasPlaying, pos=$pos)")
             player.pause()
             player.seekTo(pos)
+            // Force renderer reconfigure by re-applying track selection parameters.
+            // This is the key fix: without it, ExoPlayer skips configure() because the
+            // format hasn't changed, leaving the USB stream null after toggle ON.
+            player.trackSelectionParameters = player.trackSelectionParameters
             if (wasPlaying) {
                 usbDacResumeJob =
                     saveScope.launch {
