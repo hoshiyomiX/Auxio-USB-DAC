@@ -1,6 +1,6 @@
 package com.decent.usbaudio
 
-import android.util.Log
+import timber.log.Timber
 
 /**
  * JNI handle for a direct USB audio output stream.
@@ -55,7 +55,7 @@ class UsbAudioStream(
                 sampleRate, channelCount, bitDepth, maxPacketSize
         )
         if (nativeHandle == 0L) {
-            Log.e(TAG, "nativeUsbAudioCreate returned 0 — check logcat for native errors")
+            Timber.tag(TAG).e("nativeUsbAudioCreate returned 0 — check logcat for native errors")
         }
     }
 
@@ -181,7 +181,7 @@ class UsbAudioStream(
         if (nativeHandle == 0L) return
         nativeUsbAudioDestroy(nativeHandle)
         nativeHandle = 0L
-        Log.i(TAG, "UsbAudioStream released")
+        Timber.tag(TAG).i("UsbAudioStream released")
     }
 
     // JNI declarations

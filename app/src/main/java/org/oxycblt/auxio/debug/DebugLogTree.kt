@@ -25,7 +25,11 @@ import timber.log.Timber
 // entries, ~1MB). Enables in-built logcat-style debugging without root or READ_LOGS permission.
 // Intercepts log calls at the Timber layer before they reach platform logcat. Does NOT capture
 // native C++ logs (bypasses Timber), system/other-app logs, or pre-plant logs.
-class DebugLogTree : Timber.Tree() {
+//
+// Extends Timber.DebugTree (not Timber.Tree) so that tags are auto-inferred from the caller's
+// class name. Without DebugTree, all tags arrive as null → displayed as "Unknown" in the log
+// viewer, making it impossible to distinguish which module produced each log line.
+class DebugLogTree : Timber.DebugTree() {
 
     private val buffer = ArrayDeque<DebugLogEntry>(BUFFER_CAPACITY)
 

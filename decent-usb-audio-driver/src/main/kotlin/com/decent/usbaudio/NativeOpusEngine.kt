@@ -1,6 +1,6 @@
 package com.decent.usbaudio
 
-import android.util.Log
+import timber.log.Timber
 
 /**
  * Native Ogg/Opus decode -> USB audio engine.
@@ -62,11 +62,11 @@ class NativeOpusEngine : NativeEngine {
      */
     override fun createFromFd(fd: Int, usbHandle: Long): Boolean {
         if (!isAvailable) {
-            Log.w(TAG, "createFromFd: libopus native library not available")
+            Timber.tag(TAG).w("createFromFd: libopus native library not available")
             return false
         }
         if (handle != 0L) {
-            Log.w(TAG, "Engine already created, destroying first")
+            Timber.tag(TAG).w("Engine already created, destroying first")
             destroy()
         }
         handle =
@@ -76,20 +76,20 @@ class NativeOpusEngine : NativeEngine {
                 // Build was performed without libopus (setup.sh not run) -- the
                 // .so loaded but the Opus JNI symbols are missing. Caller falls
                 // back to the FFmpeg pipeline.
-                Log.w(TAG, "Opus JNI symbols unavailable (build without libopus?): ${e.message}")
+                Timber.tag(TAG).w("Opus JNI symbols unavailable (build without libopus?): ${e.message}")
                 0L
             } catch (e: RuntimeException) {
                 // F-3 fix: Catch broader RuntimeException (e.g. JNI env setup failure,
                 // OutOfMemoryError in native buffer allocation) to prevent app crash.
                 // Caller falls back to the FFmpeg pipeline, same as UnsatisfiedLinkError.
-                Log.w(TAG, "Opus engine creation failed (RuntimeException): ${e.message}")
+                Timber.tag(TAG).w("Opus engine creation failed (RuntimeException): ${e.message}")
                 0L
             }
         if (handle == 0L) {
-            Log.e(TAG, "Failed to create native Opus engine")
+            Timber.tag(TAG).e("Failed to create native Opus engine")
             return false
         }
-        Log.i(TAG, "Created: ${getSampleRate()}Hz ${getBitsPerSample()}-bit ${getChannels()}ch")
+        Timber.tag(TAG).i("Created: ${getSampleRate()}Hz ${getBitsPerSample()}-bit ${getChannels()}ch")
         return true
     }
 
@@ -200,7 +200,7 @@ class NativeOpusEngine : NativeEngine {
                 System.loadLibrary("decent_usb_audio")
                 true
             } catch (e: UnsatisfiedLinkError) {
-                Log.w(TAG, "Native library unavailable: ${e.message}")
+                Timber.tag(TAG).w("Native library unavailable: ${e.message}")
                 false
             }
     }

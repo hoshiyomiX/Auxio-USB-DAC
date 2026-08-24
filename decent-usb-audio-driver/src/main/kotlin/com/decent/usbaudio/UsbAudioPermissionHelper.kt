@@ -4,7 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
-import android.util.Log
+import timber.log.Timber
 
 /**
  * Helper for handling USB_DEVICE_ATTACHED intents and permissions.
@@ -43,7 +43,7 @@ object UsbAudioPermissionHelper {
         if (intent.action != UsbManager.ACTION_USB_DEVICE_ATTACHED) return null
 
         val device = intent.getParcelableExtra<UsbDevice>(UsbManager.EXTRA_DEVICE) ?: return null
-        Log.i(TAG, "USB_DEVICE_ATTACHED: ${device.productName}")
+        Timber.tag(TAG).i("USB_DEVICE_ATTACHED: ${device.productName}")
 
         val usbAudioDevice = UsbAudioDevice.getInstance(context)
         val audioDevice = usbAudioDevice.findUsbAudioDevice() ?: return null
@@ -54,9 +54,9 @@ object UsbAudioPermissionHelper {
             Thread {
                 val info = usbAudioDevice.openDevice(audioDevice)
                 if (info != null) {
-                    Log.i(TAG, "USB audio device claimed: ${info.deviceName}")
+                    Timber.tag(TAG).i("USB audio device claimed: ${info.deviceName}")
                 } else {
-                    Log.w(TAG, "USB audio device open failed (background thread)")
+                    Timber.tag(TAG).w("USB audio device open failed (background thread)")
                 }
             }.start()
             return audioDevice
@@ -66,7 +66,7 @@ object UsbAudioPermissionHelper {
                     // F-2: Permission callback also runs openDevice on background thread
                     Thread {
                         val info = usbAudioDevice.openDevice(audioDevice)
-                        Log.i(TAG, "Permission granted, device claimed: ${info?.deviceName}")
+                        Timber.tag(TAG).i("Permission granted, device claimed: ${info?.deviceName}")
                     }.start()
                 }
             }

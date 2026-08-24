@@ -11,7 +11,7 @@ import android.hardware.usb.UsbDeviceConnection
 import android.hardware.usb.UsbInterface
 import android.hardware.usb.UsbManager
 import android.os.Build
-import android.util.Log
+import timber.log.Timber
 import kotlin.math.sqrt
 
 
@@ -81,14 +81,14 @@ class UsbAudioDevice private constructor(private val context: Context) {
                 // USB Audio Class: class=1 (Audio), subclass=2 (AudioStreaming)
                 if (iface.interfaceClass == UsbConstants.USB_CLASS_AUDIO &&
                     iface.interfaceSubclass == 2) {
-                    Log.i(TAG, "Found USB audio device: ${device.productName} " +
+                    Timber.tag(TAG).i("Found USB audio device: ${device.productName} " +
                             "(vendor=0x${device.vendorId.toString(16)}, " +
                             "product=0x${device.productId.toString(16)})")
                     return device
                 }
             }
         }
-        Log.d(TAG, "No USB audio device found")
+        Timber.tag(TAG).d("No USB audio device found")
         return null
     }
 
@@ -107,7 +107,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
      */
     fun requestPermission(device: UsbDevice, callback: (Boolean) -> Unit) {
         if (usbManager.hasPermission(device)) {
-            Log.i(TAG, "Permission already granted for ${device.productName}")
+            Timber.tag(TAG).i("Permission already granted for ${device.productName}")
             callback(true)
             return
         }
@@ -124,7 +124,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
             override fun onReceive(ctx: Context, intent: Intent) {
                 if (intent.action == context.packageName + ACTION_USB_PERMISSION_SUFFIX) {
                     val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
-                    Log.i(TAG, "USB permission result: granted=$granted for ${device.productName}")
+                    Timber.tag(TAG).i("USB permission result: granted=$granted for ${device.productName}")
                     context.unregisterReceiver(this)
                     callback(granted)
                 }
@@ -139,7 +139,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
         }
 
         usbManager.requestPermission(device, permissionIntent)
-        Log.i(TAG, "Permission requested for ${device.productName}")
+        Timber.tag(TAG).i("Permission requested for ${device.productName}")
     }
 
     /**
@@ -155,14 +155,14 @@ class UsbAudioDevice private constructor(private val context: Context) {
         // Return cached info if already open with valid connection
         val cached = cachedDeviceInfo
         if (cached != null && connection != null) {
-            Log.i(TAG, "Device already open, reusing fd=${cached.fd}")
+            Timber.tag(TAG).i("Device already open, reusing fd=${cached.fd}")
             return cached
         }
         // Close any stale connection before opening new
         closeDevice()
         val conn = usbManager.openDevice(device)
         if (conn == null) {
-            Log.e(TAG, "Failed to open device ${device.productName}")
+            Timber.tag(TAG).e("Failed to open device ${device.productName}")
             return null
         }
 
@@ -192,14 +192,14 @@ class UsbAudioDevice private constructor(private val context: Context) {
                                     ep.direction == UsbConstants.USB_DIR_OUT -> {
                                 endpointOut = ep.address
                                 maxPacketSize = ep.maxPacketSize
-                                Log.i(TAG, "Found ISO OUT endpoint: address=0x${ep.address.toString(16)}, " +
+                                Timber.tag(TAG).i("Found ISO OUT endpoint: address=0x${ep.address.toString(16)}, " +
                                         "maxPacket=$maxPacketSize, interval=${ep.interval}")
                             }
                             // Isochronous IN endpoint (feedback)
                             ep.type == UsbConstants.USB_ENDPOINT_XFER_ISOC &&
                                     ep.direction == UsbConstants.USB_DIR_IN -> {
                                 endpointFeedback = ep.address
-                                Log.i(TAG, "Found ISO IN (feedback) endpoint: address=0x${ep.address.toString(16)}, " +
+                                Timber.tag(TAG).i("Found ISO IN (feedback) endpoint: address=0x${ep.address.toString(16)}, " +
                                         "interval=${ep.interval}")
                             }
                         }
@@ -209,7 +209,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
         }
 
         if (streamingInterface == null || endpointOut < 0) {
-            Log.e(TAG, "No suitable AudioStreaming interface/endpoint found")
+            Timber.tag(TAG).e("No suitable AudioStreaming interface/endpoint found")
             conn.close()
             return null
         }
@@ -221,17 +221,17 @@ class UsbAudioDevice private constructor(private val context: Context) {
 
         if (controlInterface != null) {
             val claimed = conn.claimInterface(controlInterface, true)
-            Log.i(TAG, "Claimed AudioControl interface ${controlInterface.id} force=true: $claimed")
+            Timber.tag(TAG).i("Claimed AudioControl interface ${controlInterface.id} force=true: $claimed")
         }
 
         // Claim the AudioStreaming interface with force=true to disconnect kernel driver (snd-usb-audio)
         // NOTE: We claim the zero-bandwidth alt setting (alt=0). The actual streaming alt setting
         // will be activated later via setInterface() which allocates USB bandwidth.
         val claimed = conn.claimInterface(streamingInterface, true)
-        Log.i(TAG, "Claimed AudioStreaming interface ${streamingInterface.id} force=true: $claimed " +
+        Timber.tag(TAG).i("Claimed AudioStreaming interface ${streamingInterface.id} force=true: $claimed " +
                 "(alt=${streamingInterface.alternateSetting}, endpoints=${streamingInterface.endpointCount})")
         if (!claimed) {
-            Log.e(TAG, "Failed to claim streaming interface — kernel driver may still be active")
+            Timber.tag(TAG).e("Failed to claim streaming interface — kernel driver may still be active")
             conn.close()
             return null
         }
@@ -244,7 +244,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
                         it.interfaceSubclass == 2 && it.alternateSetting == 0 }
         if (zeroAlt != null) {
             conn.setInterface(zeroAlt)
-            Log.i(TAG, "Reset streaming to alt=0 (zero-bandwidth)")
+            Timber.tag(TAG).i("Reset streaming to alt=0 (zero-bandwidth)")
         }
         Thread.sleep(100)
 
@@ -252,7 +252,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
         for (i in 0 until device.interfaceCount) {
             val iface = device.getInterface(i)
             if (iface.interfaceClass == UsbConstants.USB_CLASS_AUDIO && iface.interfaceSubclass == 2) {
-                Log.d(TAG, "  AudioStreaming alt=${iface.alternateSetting}: " +
+                Timber.tag(TAG).d("  AudioStreaming alt=${iface.alternateSetting}: " +
                         "id=${iface.id}, endpoints=${iface.endpointCount}")
             }
         }
@@ -260,7 +260,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
         val fd = conn.fileDescriptor
         val interfaceId = streamingInterface.id
 
-        Log.i(TAG, "Device opened: ${device.productName}, fd=$fd, " +
+        Timber.tag(TAG).i("Device opened: ${device.productName}, fd=$fd, " +
                 "iface=$interfaceId, epOut=0x${endpointOut.toString(16)}, " +
                 "epFb=0x${endpointFeedback.toString(16)}, " +
                 "maxPacket=$maxPacketSize, altSettings=$altSettingCount")
@@ -273,7 +273,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
         val clockSourceId = parseClockSourceId(conn)
         val (featureUnitId, audioControlIfaceId) = parseFeatureUnitId(conn)
         val (bestAlt, bestBits) = parseBestAltSetting(conn)
-        Log.i(TAG, "Auto-detected: clockSourceId=0x${clockSourceId.toString(16)}, " +
+        Timber.tag(TAG).i("Auto-detected: clockSourceId=0x${clockSourceId.toString(16)}, " +
                 "featureUnitId=0x${featureUnitId.toString(16)}, " +
                 "audioControlIface=$audioControlIfaceId, " +
                 "bestAlt=$bestAlt, bestBits=$bestBits")
@@ -284,7 +284,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
         val (volumeMin, volumeMax) = if (featureUnitId >= 0 && audioControlIfaceId >= 0) {
             queryVolumeRange(conn, featureUnitId, audioControlIfaceId)
         } else {
-            Log.w(TAG, "Skipping volume range query — no Feature Unit or AudioControl interface")
+            Timber.tag(TAG).w("Skipping volume range query — no Feature Unit or AudioControl interface")
             Pair(UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN, UsbAudioDeviceInfo.DEFAULT_VOLUME_MAX)
         }
 
@@ -318,11 +318,11 @@ class UsbAudioDevice private constructor(private val context: Context) {
         val conn = connection ?: return
         val fd = conn.fileDescriptor
 
-        Log.i(TAG, "Performing REAL USBDEVFS_RESET on fd=$fd...")
+        Timber.tag(TAG).i("Performing REAL USBDEVFS_RESET on fd=$fd...")
 
         // Real USB port reset via native ioctl — resets DAC clock state
         val ret = UsbAudioStream.nativeUsbReset(fd)
-        Log.i(TAG, "USBDEVFS_RESET result: $ret")
+        Timber.tag(TAG).i("USBDEVFS_RESET result: $ret")
 
         // Reset releases all interface claims. The fd remains valid.
         // Clear cache so openDevice re-claims, but KEEP the connection
@@ -369,7 +369,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
                 // CLOCK_SOURCE = 0x0A
                 if (bDescriptorSubtype == 0x0A && bLength >= 5) {
                     val bClockID = raw[i + 3].toInt() and 0xFF
-                    Log.i(TAG, "parseClockSourceId: found CLOCK_SOURCE bClockID=0x${bClockID.toString(16)}")
+                    Timber.tag(TAG).i("parseClockSourceId: found CLOCK_SOURCE bClockID=0x${bClockID.toString(16)}")
                     return bClockID
                 }
             }
@@ -377,7 +377,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
             i += bLength
         }
 
-        Log.w(TAG, "parseClockSourceId: no CLOCK_SOURCE descriptor found")
+        Timber.tag(TAG).w("parseClockSourceId: no CLOCK_SOURCE descriptor found")
         return -1
     }
 
@@ -412,7 +412,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
                 inAudioControl = (bInterfaceClass == 1 && bInterfaceSubClass == 1)
                 if (inAudioControl && audioControlIfaceNum < 0) {
                     audioControlIfaceNum = bInterfaceNumber
-                    Log.i(TAG, "parseFeatureUnitId: AudioControl interface number = $bInterfaceNumber")
+                    Timber.tag(TAG).i("parseFeatureUnitId: AudioControl interface number = $bInterfaceNumber")
                 }
             }
 
@@ -422,7 +422,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
                 // FEATURE_UNIT = 0x06
                 if (bDescriptorSubtype == 0x06 && bLength >= 5) {
                     val bUnitID = raw[i + 3].toInt() and 0xFF
-                    Log.i(TAG, "parseFeatureUnitId: found FEATURE_UNIT bUnitID=0x${bUnitID.toString(16)} " +
+                    Timber.tag(TAG).i("parseFeatureUnitId: found FEATURE_UNIT bUnitID=0x${bUnitID.toString(16)} " +
                             "in AudioControl iface=$audioControlIfaceNum")
                     return Pair(bUnitID, audioControlIfaceNum)
                 }
@@ -431,7 +431,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
             i += bLength
         }
 
-        Log.w(TAG, "parseFeatureUnitId: no FEATURE_UNIT descriptor found — hardware volume control unavailable")
+        Timber.tag(TAG).w("parseFeatureUnitId: no FEATURE_UNIT descriptor found — hardware volume control unavailable")
         return Pair(-1, audioControlIfaceNum)
     }
 
@@ -471,13 +471,13 @@ class UsbAudioDevice private constructor(private val context: Context) {
                 // value and must not be used as the minimum non-mute volume.
                 minVal = if (signed <= -32768) -32767 else signed
                 val db = minVal.toDouble() / 256.0
-                Log.i(TAG, "queryVolumeRange: GET_MIN = $signed → clamped to $minVal " +
+                Timber.tag(TAG).i("queryVolumeRange: GET_MIN = $signed → clamped to $minVal " +
                         "(0x${(minVal.toInt() and 0xFFFF).toString(16)}) = ${"%.2f".format(db)} dB")
             } else {
-                Log.w(TAG, "queryVolumeRange: GET_MIN returned non-negative value $signed — using default")
+                Timber.tag(TAG).w("queryVolumeRange: GET_MIN returned non-negative value $signed — using default")
             }
         } else {
-            Log.w(TAG, "queryVolumeRange: GET_MIN failed (ret=$minRet) — using default min = -50 dB")
+            Timber.tag(TAG).w("queryVolumeRange: GET_MIN failed (ret=$minRet) — using default min = -50 dB")
         }
 
         // GET_MAX (bRequest = 0x83)
@@ -494,12 +494,12 @@ class UsbAudioDevice private constructor(private val context: Context) {
             if (signed >= 0) {
                 maxVal = signed
                 val db = signed.toDouble() / 256.0
-                Log.i(TAG, "queryVolumeRange: GET_MAX = $signed (0x${(raw and 0xFFFF).toString(16)}) = ${"%.2f".format(db)} dB")
+                Timber.tag(TAG).i("queryVolumeRange: GET_MAX = $signed (0x${(raw and 0xFFFF).toString(16)}) = ${"%.2f".format(db)} dB")
             } else {
-                Log.w(TAG, "queryVolumeRange: GET_MAX returned negative value $signed — using default")
+                Timber.tag(TAG).w("queryVolumeRange: GET_MAX returned negative value $signed — using default")
             }
         } else {
-            Log.w(TAG, "queryVolumeRange: GET_MAX failed (ret=$maxRet) — using default max = 0 dB")
+            Timber.tag(TAG).w("queryVolumeRange: GET_MAX failed (ret=$maxRet) — using default max = 0 dB")
         }
 
         // Degenerate-range detection: if minVal >= maxVal, the DAC reported a nonsensical
@@ -507,13 +507,13 @@ class UsbAudioDevice private constructor(private val context: Context) {
         // setUsbVolume, producing the "0% peak, 1-100% no sound" bug. Reset to safe
         // defaults so the slider works correctly even on misbehaving DACs.
         if (minVal >= maxVal) {
-            Log.w(TAG, "queryVolumeRange: degenerate range [$minVal, $maxVal] " +
+            Timber.tag(TAG).w("queryVolumeRange: degenerate range [$minVal, $maxVal] " +
                     "(min >= max) — resetting to defaults [-12800, 0] (-50 dB to 0 dB)")
             minVal = UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN
             maxVal = UsbAudioDeviceInfo.DEFAULT_VOLUME_MAX
         }
 
-        Log.i(TAG, "queryVolumeRange: final range = [${minVal}, ${maxVal}] " +
+        Timber.tag(TAG).i("queryVolumeRange: final range = [${minVal}, ${maxVal}] " +
                 "(${"%.2f".format(minVal.toDouble()/256.0)} dB to ${"%.2f".format(maxVal.toDouble()/256.0)} dB)")
         return Pair(minVal, maxVal)
     }
@@ -556,7 +556,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
         val info = cachedDeviceInfo
         val fuId = info?.featureUnitId ?: -1
         if (fuId < 0) {
-            Log.w(TAG, "setUsbVolume: no Feature Unit ID available — hardware volume unsupported")
+            Timber.tag(TAG).w("setUsbVolume: no Feature Unit ID available — hardware volume unsupported")
             return false
         }
 
@@ -613,7 +613,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
                 safeMin = minFixed
                 safeMax = maxFixed
             } else {
-                Log.w(TAG, "setUsbVolume: degenerate range [$minFixed, $maxFixed] " +
+                Timber.tag(TAG).w("setUsbVolume: degenerate range [$minFixed, $maxFixed] " +
                         "(min >= max) — using defaults [-12800, -496]")
                 safeMin = UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN.toInt()
                 safeMax = UsbAudioDeviceInfo.CEILING_VOLUME_MAX.toInt()
@@ -642,7 +642,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
         val wIndex = (fuId shl 8) or (ifaceId and 0xFF)
 
         val dbValue = raw16.toDouble() / 256.0
-        Log.d(TAG, "setUsbVolume: linear=$clamped → dbFixed=$raw16 (${"%.2f".format(dbValue)}" +
+        Timber.tag(TAG).d("setUsbVolume: linear=$clamped → dbFixed=$raw16 (${"%.2f".format(dbValue)}" +
                 " dB), range=[${info?.volumeMin}, ${info?.volumeMax}], " +
                 "fuId=0x${fuId.toString(16)}, iface=$ifaceId")
 
@@ -656,11 +656,11 @@ class UsbAudioDevice private constructor(private val context: Context) {
                 500      // timeout ms (shorter than sample rate — volume is non-critical)
         )
         if (ret >= 0) {
-            Log.i(TAG, "setUsbVolume($volume → $clamped, raw=0x${(raw16.toInt() and 0xFFFF).toString(16)}): " +
+            Timber.tag(TAG).i("setUsbVolume($volume → $clamped, raw=0x${(raw16.toInt() and 0xFFFF).toString(16)}): " +
                     "SUCCESS with featureUnitId=0x${fuId.toString(16)}, iface=$ifaceId")
             return true
         }
-        Log.w(TAG, "setUsbVolume($volume): SET_CUR failed (ret=$ret) — DAC may not support hardware volume " +
+        Timber.tag(TAG).w("setUsbVolume($volume): SET_CUR failed (ret=$ret) — DAC may not support hardware volume " +
                 "or the value is outside its range")
         return false
     }
@@ -693,7 +693,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
                 500
         )
         if (ret < 2) {
-            Log.w(TAG, "getUsbVolume: GET_CUR failed (ret=$ret)")
+            Timber.tag(TAG).w("getUsbVolume: GET_CUR failed (ret=$ret)")
             return -1f
         }
         val raw16 = ((data[1].toInt() and 0xFF) shl 8) or (data[0].toInt() and 0xFF)
@@ -733,7 +733,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
             safeMin = minFixed
             safeMax = maxFixed
         } else {
-            Log.w(TAG, "getUsbVolume: degenerate range [$minFixed, $maxFixed] — using defaults")
+            Timber.tag(TAG).w("getUsbVolume: degenerate range [$minFixed, $maxFixed] — using defaults")
             safeMin = UsbAudioDeviceInfo.DEFAULT_VOLUME_MIN.toInt()
             safeMax = UsbAudioDeviceInfo.CEILING_VOLUME_MAX.toInt()
         }
@@ -791,7 +791,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
                 if (bDescriptorSubtype == 0x02) {
                     val bSubslotSize = raw[i + 4].toInt() and 0xFF
                     val bBitResolution = raw[i + 5].toInt() and 0xFF
-                    Log.i(TAG, "parseBestAltSetting: alt=$currentAlt subslotSize=$bSubslotSize bitResolution=$bBitResolution")
+                    Timber.tag(TAG).i("parseBestAltSetting: alt=$currentAlt subslotSize=$bSubslotSize bitResolution=$bBitResolution")
 
                     if (currentAlt > 0) {
                         altSettings.add(Pair(currentAlt, bBitResolution))
@@ -807,7 +807,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
         }
 
         parsedAltSettings = altSettings
-        Log.i(TAG, "parseBestAltSetting: best alt=$bestAlt bits=$bestBits, all=$altSettings")
+        Timber.tag(TAG).i("parseBestAltSetting: best alt=$bestAlt bits=$bestBits, all=$altSettings")
         return Pair(bestAlt, bestBits)
     }
 
@@ -827,7 +827,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
         // Exact match
         val exact = parsedAltSettings.firstOrNull { it.second == targetBitDepth }
         if (exact != null) {
-            Log.i(TAG, "findAltSettingForBitDepth($targetBitDepth): exact match alt=${exact.first}")
+            Timber.tag(TAG).i("findAltSettingForBitDepth($targetBitDepth): exact match alt=${exact.first}")
             return exact
         }
 
@@ -836,13 +836,13 @@ class UsbAudioDevice private constructor(private val context: Context) {
                 .filter { it.second > targetBitDepth }
                 .minByOrNull { it.second }
         if (higher != null) {
-            Log.i(TAG, "findAltSettingForBitDepth($targetBitDepth): next higher alt=${higher.first} bits=${higher.second}")
+            Timber.tag(TAG).i("findAltSettingForBitDepth($targetBitDepth): next higher alt=${higher.first} bits=${higher.second}")
             return higher
         }
 
         // Fallback to best
         val best = parsedAltSettings.maxByOrNull { it.second } ?: Pair(1, 16)
-        Log.i(TAG, "findAltSettingForBitDepth($targetBitDepth): fallback to best alt=${best.first} bits=${best.second}")
+        Timber.tag(TAG).i("findAltSettingForBitDepth($targetBitDepth): fallback to best alt=${best.first} bits=${best.second}")
         return best
     }
 
@@ -858,7 +858,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
         connection?.close()
         connection = null
         currentDevice = null
-        Log.i(TAG, "USB device closed")
+        Timber.tag(TAG).i("USB device closed")
     }
 
     /**
@@ -914,12 +914,12 @@ class UsbAudioDevice private constructor(private val context: Context) {
                     1000     // timeout ms
             )
             if (ret >= 0) {
-                Log.i(TAG, "setSampleRate($sampleRateHz Hz): SUCCESS with clockSourceId=0x${csId.toString(16)} iface=$ifaceId (wIndex=0x${wIndex.toString(16)}, ret=$ret)")
+                Timber.tag(TAG).i("setSampleRate($sampleRateHz Hz): SUCCESS with clockSourceId=0x${csId.toString(16)} iface=$ifaceId (wIndex=0x${wIndex.toString(16)}, ret=$ret)")
                 return true
             }
         }
 
-        Log.w(TAG, "setSampleRate($sampleRateHz Hz): all clock source IDs failed, DAC may auto-detect")
+        Timber.tag(TAG).w("setSampleRate($sampleRateHz Hz): all clock source IDs failed, DAC may auto-detect")
         return false
     }
 
@@ -952,12 +952,12 @@ class UsbAudioDevice private constructor(private val context: Context) {
                         ((data[1].toInt() and 0xFF) shl 8) or
                         ((data[2].toInt() and 0xFF) shl 16) or
                         ((data[3].toInt() and 0xFF) shl 24)
-                Log.i(TAG, "readSampleRate: GET_CUR clockSourceId=0x${csId.toString(16)} " +
+                Timber.tag(TAG).i("readSampleRate: GET_CUR clockSourceId=0x${csId.toString(16)} " +
                         "returned $rate Hz (raw=${data.joinToString(",") { "0x${(it.toInt() and 0xFF).toString(16)}" }})")
                 return rate
             }
         }
-        Log.w(TAG, "readSampleRate: all GET_CUR attempts failed")
+        Timber.tag(TAG).w("readSampleRate: all GET_CUR attempts failed")
         return -1
     }
 
@@ -991,11 +991,11 @@ class UsbAudioDevice private constructor(private val context: Context) {
             )
             if (ret >= 1) {
                 val valid = data[0].toInt() and 0x01
-                Log.i(TAG, "readClockValid: clockSourceId=0x${csId.toString(16)} iface=$ifaceId valid=$valid")
+                Timber.tag(TAG).i("readClockValid: clockSourceId=0x${csId.toString(16)} iface=$ifaceId valid=$valid")
                 return valid == 1
             }
         }
-        Log.w(TAG, "readClockValid: all GET_CUR attempts failed")
+        Timber.tag(TAG).w("readClockValid: all GET_CUR attempts failed")
         return false
     }
 
@@ -1014,13 +1014,13 @@ class UsbAudioDevice private constructor(private val context: Context) {
                 iface.interfaceSubclass == 2 &&
                 iface.alternateSetting == altSetting) {
                 val result = conn.setInterface(iface)
-                Log.i(TAG, "setAltSetting($altSetting) via Java API: $result " +
+                Timber.tag(TAG).i("setAltSetting($altSetting) via Java API: $result " +
                         "(iface id=${iface.id}, endpoints=${iface.endpointCount})")
                 return result
             }
         }
 
-        Log.w(TAG, "setAltSetting($altSetting): no matching UsbInterface found, " +
+        Timber.tag(TAG).w("setAltSetting($altSetting): no matching UsbInterface found, " +
                 "trying all AudioStreaming interfaces...")
 
         // Fallback: try any AudioStreaming interface with matching alt
@@ -1028,7 +1028,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
             val iface = device.getInterface(i)
             if (iface.interfaceClass == UsbConstants.USB_CLASS_AUDIO &&
                 iface.interfaceSubclass == 2) {
-                Log.d(TAG, "  interface $i: id=${iface.id} alt=${iface.alternateSetting} " +
+                Timber.tag(TAG).d("  interface $i: id=${iface.id} alt=${iface.alternateSetting} " +
                         "endpoints=${iface.endpointCount}")
             }
         }

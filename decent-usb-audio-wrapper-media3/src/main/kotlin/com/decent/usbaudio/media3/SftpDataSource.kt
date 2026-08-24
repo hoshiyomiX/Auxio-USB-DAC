@@ -1,7 +1,7 @@
 package com.decent.usbaudio.media3
 
 import android.net.Uri
-import android.util.Log
+import timber.log.Timber
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
@@ -67,7 +67,7 @@ class SftpDataSource : BaseDataSource(/* isNetwork = */ true) {
 
             if (needNewSession) {
                 closeSession()
-                Log.i(TAG, "New SSH session to $host:$port as $user")
+                Timber.tag(TAG).i("New SSH session to $host:$port as $user")
                 val jsch = JSch()
                 val sess = jsch.getSession(user, host, port)
                 sess.setPassword(pass)
@@ -101,7 +101,7 @@ class SftpDataSource : BaseDataSource(/* isNetwork = */ true) {
                 if (!resolved) {
                     // Strip /home/user/ for chroot
                     val relative = path.replace(Regex("^/home/[^/]+/"), "/")
-                    Log.w(TAG, "Absolute path failed, trying: $relative")
+                    Timber.tag(TAG).w("Absolute path failed, trying: $relative")
                     try {
                         ch.stat(relative)
                         path = relative
@@ -129,7 +129,7 @@ class SftpDataSource : BaseDataSource(/* isNetwork = */ true) {
                 inputStream = ch.get(cachedPath, null, dataSpec.position)
             } catch (_: Exception) {
                 // Channel stale after interrupted read — reconnect
-                Log.w(TAG, "Channel stale, reconnecting...")
+                Timber.tag(TAG).w("Channel stale, reconnecting...")
                 try { ch.disconnect() } catch (_: Exception) {}
                 val fresh = session!!.openChannel("sftp") as ChannelSftp
                 fresh.connect(10000)
@@ -145,11 +145,11 @@ class SftpDataSource : BaseDataSource(/* isNetwork = */ true) {
 
             opened = true
             transferStarted(dataSpec)
-            Log.i(TAG, "open: pos=${dataSpec.position} size=$fileSize remaining=$bytesRemaining")
+            Timber.tag(TAG).i("open: pos=${dataSpec.position} size=$fileSize remaining=$bytesRemaining")
             return bytesRemaining
 
         } catch (e: Exception) {
-            Log.e(TAG, "open failed: ${e.message}", e)
+            Timber.tag(TAG).e("open failed: ${e.message}", e)
             throw java.io.IOException("SFTP open failed", e)
         }
     }
@@ -174,7 +174,7 @@ class SftpDataSource : BaseDataSource(/* isNetwork = */ true) {
         try {
             inputStream?.close()
         } catch (e: Exception) {
-            Log.w(TAG, "close stream error: ${e.message}")
+            Timber.tag(TAG).w("close stream error: ${e.message}")
         } finally {
             inputStream = null
             if (opened) {

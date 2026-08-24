@@ -11,7 +11,7 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
-import android.util.Log
+import timber.log.Timber
 import androidx.annotation.OptIn
 import androidx.core.content.ContextCompat
 import androidx.media3.common.C
@@ -81,11 +81,11 @@ class UsbAudioSink(
     @Synchronized
     fun setBitPerfectEnabled(enabled: Boolean) {
         if (bitPerfectEnabled == enabled) {
-            Log.i(TAG, "setBitPerfectEnabled($enabled) — no change, skipping")
+            Timber.tag(TAG).i("setBitPerfectEnabled($enabled) — no change, skipping")
             return
         }
         bitPerfectEnabled = enabled
-        Log.i(TAG, "setBitPerfectEnabled($enabled) — applying runtime toggle")
+        Timber.tag(TAG).i("setBitPerfectEnabled($enabled) — applying runtime toggle")
         if (!enabled) {
             // Tear down USB stream immediately so the delegate AudioTrack unmutes and
             // audio resumes through the normal Android path on the next buffer.
@@ -108,7 +108,7 @@ class UsbAudioSink(
             val device = intent.getParcelableExtra<android.hardware.usb.UsbDevice>(
                 UsbManager.EXTRA_DEVICE
             )
-            Log.i(TAG, "USB_DEVICE_DETACHED: ${device?.productName} — releasing USB stream")
+            Timber.tag(TAG).i("USB_DEVICE_DETACHED: ${device?.productName} — releasing USB stream")
             // releaseUsbStream does blocking I/O (drainUrbs, nativeEngine.stop+join);
             // run on a worker thread to avoid ANR on the main thread.
             Thread { releaseUsbStream() }.start()
@@ -127,7 +127,7 @@ class UsbAudioSink(
             IntentFilter(UsbManager.ACTION_USB_DEVICE_DETACHED),
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
-        Log.i(TAG, "USB_DEVICE_DETACHED receiver registered")
+        Timber.tag(TAG).i("USB_DEVICE_DETACHED receiver registered")
     }
 
     /** Source file bit depth (16, 24, 32). Auto-detected from NativeAudioEngine. */
@@ -157,12 +157,12 @@ class UsbAudioSink(
             if (flacFinished) {
                 engine!!.destroy()
                 nativeEngine = null
-                Log.i(TAG, "cleanupFinishedEngine: old FLAC engine cleared")
+                Timber.tag(TAG).i("cleanupFinishedEngine: old FLAC engine cleared")
             }
             if (opusFinished) {
                 opusEngine!!.destroy()
                 nativeOpusEngine = null
-                Log.i(TAG, "cleanupFinishedEngine: old Opus engine cleared")
+                Timber.tag(TAG).i("cleanupFinishedEngine: old Opus engine cleared")
             }
             isNativeEngineActive = false
             activeEnginePath = null
@@ -171,7 +171,7 @@ class UsbAudioSink(
 
             // Apply deferred USB reconfiguration (cross-rate transition)
             if (hasDeferredConfig) {
-                Log.i(TAG, "cleanupFinishedEngine: applying deferred config rate=$deferredRate")
+                Timber.tag(TAG).i("cleanupFinishedEngine: applying deferred config rate=$deferredRate")
                 configureUsbBitPerfect(deferredRate, deferredChannels, deferredEncoding)
                 hasDeferredConfig = false
             }
@@ -211,7 +211,7 @@ class UsbAudioSink(
                 if (nativeEngine != null || nativeOpusEngine != null) {
                     isNativeEngineActive = false
                 }
-                Log.i(TAG, "createEngineIfNeeded: flacEngine=${nativeEngine != null} opusEngine=${nativeOpusEngine != null}")
+                Timber.tag(TAG).i("createEngineIfNeeded: flacEngine=${nativeEngine != null} opusEngine=${nativeOpusEngine != null}")
             }
         }
     }
@@ -295,16 +295,16 @@ class UsbAudioSink(
                     deferredChannels = inputFormat.channelCount
                     deferredEncoding = enc
                     hasDeferredConfig = true
-                    Log.i(TAG, "configure: engine running, pre-buffer — deferred rate=${inputFormat.sampleRate}")
+                    Timber.tag(TAG).i("configure: engine running, pre-buffer — deferred rate=${inputFormat.sampleRate}")
                 } else {
-                    Log.i(TAG, "configure: engine running, same rate — keeping alive")
+                    Timber.tag(TAG).i("configure: engine running, same rate — keeping alive")
                 }
                 super.configure(inputFormat, specifiedBufferSize, outputChannels)
                 muteDelegateIfNeeded()
                 return
             }
             // Track changed (manual skip) — destroy engine and proceed
-            Log.i(TAG, "configure: track changed, destroying engine")
+            Timber.tag(TAG).i("configure: track changed, destroying engine")
         }
         // Track changed or engine finished — destroy old engines
         val oldEngine = nativeEngine
@@ -312,14 +312,14 @@ class UsbAudioSink(
             oldEngine.stop()
             oldEngine.destroy()
             nativeEngine = null
-            Log.i(TAG, "configure: destroyed old FLAC engine")
+            Timber.tag(TAG).i("configure: destroyed old FLAC engine")
         }
         val oldOpusEngine = nativeOpusEngine
         if (oldOpusEngine != null) {
             oldOpusEngine.stop()
             oldOpusEngine.destroy()
             nativeOpusEngine = null
-            Log.i(TAG, "configure: destroyed old Opus engine")
+            Timber.tag(TAG).i("configure: destroyed old Opus engine")
         }
         isNativeEngineActive = false
         activeEnginePath = null
@@ -328,7 +328,7 @@ class UsbAudioSink(
         val sr = inputFormat.sampleRate.takeIf { it > 0 }
         val ch = inputFormat.channelCount.takeIf { it > 0 }
 
-        Log.i(TAG, "configure: pcmEncoding=${when(enc) {
+        Timber.tag(TAG).i("configure: pcmEncoding=${when(enc) {
             C.ENCODING_PCM_FLOAT -> "FLOAT"; C.ENCODING_PCM_16BIT -> "16BIT"
             C.ENCODING_PCM_24BIT -> "24BIT"; C.ENCODING_PCM_32BIT -> "32BIT"
             else -> "UNKNOWN($enc)"
@@ -343,7 +343,7 @@ class UsbAudioSink(
                 if (config.forceRouteToSpeaker) forceMediaToSpeaker()
                 super.configure(inputFormat, specifiedBufferSize, outputChannels)
                 muteDelegateIfNeeded()
-                Log.i(TAG, "Delegate configured (muted, routed to speaker)")
+                Timber.tag(TAG).i("Delegate configured (muted, routed to speaker)")
                 return
             } else if (device != null) {
                 // USB DAC is plugged in but we don't have permission yet. Request
@@ -354,22 +354,22 @@ class UsbAudioSink(
                 // while bit-perfect mode is already ON — toggling bit-perfect ON while
                 // the DAC is already connected would never request permission, leaving
                 // the overlay stuck on "FFmpeg" / blank engine / blank USB device.
-                Log.w(TAG, "USB DAC found but no permission — requesting...")
+                Timber.tag(TAG).w("USB DAC found but no permission — requesting...")
                 usbAudioDevice.requestPermission(device) { granted ->
                     if (granted) {
-                        Log.i(TAG, "USB permission granted — forcing reconfigure")
+                        Timber.tag(TAG).i("USB permission granted — forcing reconfigure")
                         // Post to main thread to avoid re-entrant configure() calls
                         // if requestPermission invoked the callback synchronously
                         // (which happens when permission was already granted).
                         attachedPlayer?.let { player ->
                             Handler(Looper.getMainLooper()).post {
                                 val pos = player.currentPosition
-                                Log.i(TAG, "Reconfigure seekTo($pos) after permission grant")
+                                Timber.tag(TAG).i("Reconfigure seekTo($pos) after permission grant")
                                 player.seekTo(pos)
                             }
                         }
                     } else {
-                        Log.w(TAG, "USB permission denied by user")
+                        Timber.tag(TAG).w("USB permission denied by user")
                     }
                 }
             }
@@ -410,7 +410,7 @@ class UsbAudioSink(
                 if (windowOffsetUs < 0) {
                     windowOffsetUs = presentationTimeUs - initialPlayerPositionUs
                 }
-                Log.i(TAG, "startMediaTimeUs=$usbStartMediaTimeUs windowOffset=$windowOffsetUs initialPos=${initialPlayerPositionUs / 1000}ms")
+                Timber.tag(TAG).i("startMediaTimeUs=$usbStartMediaTimeUs windowOffset=$windowOffsetUs initialPos=${initialPlayerPositionUs / 1000}ms")
 
                 // After a flush (seek) or initial start, seek the native engine
                 // to the correct position and resume it.
@@ -423,12 +423,12 @@ class UsbAudioSink(
                             engine.seek(enginePositionUs)
                             if (isPlaying) engine.resume()
                             engineNeedsInitialSeek = false
-                            Log.i(TAG, "Native FLAC engine seek to ${enginePositionUs / 1_000_000}s (playing=$isPlaying)")
+                            Timber.tag(TAG).i("Native FLAC engine seek to ${enginePositionUs / 1_000_000}s (playing=$isPlaying)")
                         } else if (opusEngine != null) {
                             opusEngine.seek(enginePositionUs)
                             if (isPlaying) opusEngine.resume()
                             engineNeedsInitialSeek = false
-                            Log.i(TAG, "Native Opus engine seek to ${enginePositionUs / 1_000_000}s (playing=$isPlaying)")
+                            Timber.tag(TAG).i("Native Opus engine seek to ${enginePositionUs / 1_000_000}s (playing=$isPlaying)")
                         }
                     }
                 }
@@ -451,7 +451,7 @@ class UsbAudioSink(
                 // Engine finished playing — clean up for next track.
                 // Lazy creation at the top of handleBuffer will create a new engine
                 // with the correct currentTrackPath on the next call.
-                Log.i(TAG, "Native engine finished — cleaning up for next track")
+                Timber.tag(TAG).i("Native engine finished — cleaning up for next track")
                 engine?.destroy()
                 nativeEngine = null
                 opusEngine?.destroy()
@@ -483,7 +483,7 @@ class UsbAudioSink(
                     val floatBuf = FloatArray(totalSamples)
                     snapshot.asFloatBuffer().get(floatBuf)
                     if (handleBufferCallCount <= 3) {
-                        Log.i(TAG, "handleBuffer #$handleBufferCallCount: FLOAT samples=$totalSamples")
+                        Timber.tag(TAG).i("handleBuffer #$handleBufferCallCount: FLOAT samples=$totalSamples")
                     }
                     thread.enqueue(floatBuf)
                 }
@@ -494,7 +494,7 @@ class UsbAudioSink(
                     snapshot.get(rawBytes)
                     if (handleBufferCallCount <= 3) {
                         val bps = PcmUtils.bytesPerSample(currentEncoding)
-                        Log.i(TAG, "handleBuffer #$handleBufferCallCount: RAW ${bps*8}bit bytes=$remaining")
+                        Timber.tag(TAG).i("handleBuffer #$handleBufferCallCount: RAW ${bps*8}bit bytes=$remaining")
                     }
                     thread.enqueueRaw(rawBytes, currentEncoding)
                 }
@@ -517,7 +517,7 @@ class UsbAudioSink(
         // Run synchronously here (we're already on the renderer thread, and a dead
         // stream drains URBs near-instantly since they've already failed).
         if (bitPerfectEnabled && stream != null && !stream.isAlive) {
-            Log.w(TAG, "handleBuffer: USB stream died mid-track — releasing and falling back to delegate")
+            Timber.tag(TAG).w("handleBuffer: USB stream died mid-track — releasing and falling back to delegate")
             releaseUsbStream()
         }
 
@@ -538,7 +538,7 @@ class UsbAudioSink(
             val engineCreated = engine?.isCreated == true
 
             if (++posLogCount % 500 == 1L) {
-                Log.i(TAG, "getPositionUs: streamAlive=$streamAlive engine=$engineCreated " +
+                Timber.tag(TAG).i("getPositionUs: streamAlive=$streamAlive engine=$engineCreated " +
                         "running=${engine?.isRunning} window=$windowOffsetUs enginePos=${engine?.getPositionUs()}")
             }
 
@@ -547,7 +547,7 @@ class UsbAudioSink(
             // LoadControl blocked loading, so we skip externally via the Player ref.
             if (engine != null && !engine.isRunning && !engineEndNotified) {
                 engineEndNotified = true
-                Log.i(TAG, "Engine finished — advancing to next track")
+                Timber.tag(TAG).i("Engine finished — advancing to next track")
                 val p = attachedPlayer
                 if (p != null) {
                     Handler(Looper.getMainLooper()).post {
@@ -613,7 +613,7 @@ class UsbAudioSink(
             nativeEngine?.resume(); nativeOpusEngine?.resume(); true
         } else false
         usbStreamingThread?.resumeStreaming()
-        Log.i(TAG, "play() needsSeek=$engineNeedsInitialSeek resumed=$resumed")
+        Timber.tag(TAG).i("play() needsSeek=$engineNeedsInitialSeek resumed=$resumed")
     }
 
     override fun pause() {
@@ -628,32 +628,27 @@ class UsbAudioSink(
 
     override fun setVolume(volume: Float) {
         pendingVolume = volume
-        if (bitPerfectEnabled && usbAudioStream?.isAlive == true) {
+        val streamAlive = usbAudioStream?.isAlive == true
+        Timber.tag(TAG).d("setVolume($volume): bitPerfect=$bitPerfectEnabled streamAlive=$streamAlive")
+        if (bitPerfectEnabled && streamAlive) {
             muteDelegateIfNeeded()
-            // Bit-perfect mode: audio bypasses Android's AudioTrack and goes directly
-            // to the USB DAC via isochronous transfers. The muted delegate AudioTrack
-            // is a no-op, so stream volume (e.g. from hardware volume keys or the
-            // system volume slider via VolumeProviderCompat) would otherwise have no
-            // effect on the audible output. Propagate the volume to the USB DAC's
-            // hardware Feature Unit via UAC2 SET_CUR so the user can actually adjust
-            // the loudness. Best-effort: if the DAC lacks a Feature Unit (FU ID = -1)
-            // or the SET_CUR fails, we silently fall back to fixed-volume output
-            // (bit-perfect at full DAC volume). This is acceptable because software
-            // gain on the PCM stream would break the bit-perfect guarantee.
             try {
                 val ok = usbAudioDevice.setUsbVolume(volume)
                 if (!ok) {
-                    Log.w(TAG, "setVolume($volume): USB DAC hardware volume unavailable — output remains at DAC's current level")
+                    Timber.tag(TAG).w("setVolume($volume): USB DAC hardware volume unavailable — output remains at DAC's current level")
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "setVolume($volume): USB DAC hardware volume threw: ${e.message}")
+                Timber.tag(TAG).w("setVolume($volume): USB DAC hardware volume threw: ${e.message}")
             }
         } else {
             unmuteDelegateIfNeeded()
-            // Non-bit-perfect path: delegate AudioTrack handles volume normally via
-            // Android's AudioFlinger. No USB DAC volume control needed — the stream
-            // is either routed through AudioFlinger to the speaker/headphones, or the
-            // USB stream is not yet alive (e.g. between tracks, before DAC init).
+            // Diagnose why USB DAC volume is not active. This branch is a no-op for USB DAC
+            // volume — the delegate AudioTrack handles volume via AudioFlinger instead.
+            // Common causes: usbAudioStream is null (DAC not opened), stream not alive
+            // (DAC disconnected), or bitPerfectEnabled is false.
+            if (bitPerfectEnabled && !streamAlive) {
+                Timber.tag(TAG).w("setVolume($volume): bitPerfect ON but USB stream not alive — volume has no effect on USB DAC output. usbAudioStream=${if (usbAudioStream != null) "exists" else "null"}")
+            }
         }
     }
 
@@ -688,7 +683,7 @@ class UsbAudioSink(
         // successfully registered (e.g., security exceptions on some OEMs).
         try {
             context.unregisterReceiver(usbDetachedReceiver)
-            Log.i(TAG, "USB_DEVICE_DETACHED receiver unregistered")
+            Timber.tag(TAG).i("USB_DEVICE_DETACHED receiver unregistered")
         } catch (e: IllegalArgumentException) {
             // Already unregistered or never registered — safe to ignore.
         }
@@ -705,7 +700,7 @@ class UsbAudioSink(
         // Cache check — avoid needless USB stream recreation
         if (sampleRate == currentSampleRate && channelCount == currentChannelCount
             && usbAudioStream?.isAlive == true) {
-            Log.d(TAG, "USB stream cached for rate=$sampleRate ch=$channelCount — reusing")
+            Timber.tag(TAG).d("USB stream cached for rate=$sampleRate ch=$channelCount — reusing")
             // Engine will be created lazily in handleBuffer when currentTrackPath is set
             return
         }
@@ -715,7 +710,7 @@ class UsbAudioSink(
         val usbDevice = usbAudioDevice.findUsbAudioDevice() ?: return
         var deviceInfo = usbAudioDevice.openDevice(usbDevice)
         if (deviceInfo == null) {
-            Log.e(TAG, "Failed to open USB device")
+            Timber.tag(TAG).e("Failed to open USB device")
             return
         }
         currentUsbDeviceName = deviceInfo.deviceName
@@ -724,7 +719,7 @@ class UsbAudioSink(
         // Sources with lower bit depth are zero-padded in the LSBs.
         val bitDepth = deviceInfo.bestBitDepth
         val altSetting = deviceInfo.bestAltSetting
-        Log.i(TAG, "Bit-perfect: source=${trackBitDepth}bit → alt=$altSetting usb=${bitDepth}bit " +
+        Timber.tag(TAG).i("Bit-perfect: source=${trackBitDepth}bit → alt=$altSetting usb=${bitDepth}bit " +
                 "clockSource=0x${deviceInfo.clockSourceId.toString(16)}")
 
         var stream = UsbAudioStream(
@@ -739,7 +734,7 @@ class UsbAudioSink(
         )
 
         if (!stream.isReady) {
-            Log.e(TAG, "USB stream creation failed")
+            Timber.tag(TAG).e("USB stream creation failed")
             stream.release()
             return
         }
@@ -756,12 +751,12 @@ class UsbAudioSink(
 
         // Step 1: setAlt(0) — FREE old ISO rings
         if (!usbAudioDevice.setAltSetting(0)) {
-            Log.w(TAG, "setAlt(0) failed — stale fd, reopening device...")
+            Timber.tag(TAG).w("setAlt(0) failed — stale fd, reopening device...")
             usbAudioDevice.closeDevice()
             stream.release()
             deviceInfo = usbAudioDevice.openDevice(usbDevice)
             if (deviceInfo == null) {
-                Log.e(TAG, "Failed to reopen USB device")
+                Timber.tag(TAG).e("Failed to reopen USB device")
                 return
             }
             stream = UsbAudioStream(
@@ -775,34 +770,34 @@ class UsbAudioSink(
                 maxPacketSize = deviceInfo.maxPacketSize
             )
             if (!stream.isReady) {
-                Log.e(TAG, "USB stream recreation failed after reopen")
+                Timber.tag(TAG).e("USB stream recreation failed after reopen")
                 stream.release()
                 return
             }
-            Log.i(TAG, "Device reopened with fresh fd=${deviceInfo.fd}")
+            Timber.tag(TAG).i("Device reopened with fresh fd=${deviceInfo.fd}")
         }
-        Log.i(TAG, "Step 1: setAlt(0) — old ISO ring freed")
+        Timber.tag(TAG).i("Step 1: setAlt(0) — old ISO ring freed")
 
         // Step 2: SET_CUR — write new sample rate
         usbAudioDevice.setSampleRate(sampleRate)
 
         // Step 3: GET_CUR(CLOCK_VALID_CONTROL) — verify clock is locked
         val clockValid = usbAudioDevice.readClockValid()
-        Log.i(TAG, "Step 2-3: SET_CUR=$sampleRate, CLOCK_VALID=$clockValid")
+        Timber.tag(TAG).i("Step 2-3: SET_CUR=$sampleRate, CLOCK_VALID=$clockValid")
 
         // Step 4: setAlt(0) AGAIN — defensive reset after clock change
         usbAudioDevice.setAltSetting(0)
-        Log.i(TAG, "Step 4: setAlt(0) again — defensive reset")
+        Timber.tag(TAG).i("Step 4: setAlt(0) again — defensive reset")
 
         // Step 5: setAlt(N) — ALLOC new ISO rings
         val altResult = usbAudioDevice.setAltSetting(altSetting)
-        Log.i(TAG, "Step 5: setAlt($altSetting): $altResult — new ISO ring allocated")
+        Timber.tag(TAG).i("Step 5: setAlt($altSetting): $altResult — new ISO ring allocated")
 
         // Step 6: wait ~47ms — DAC PLL lock time
         Thread.sleep(50)
 
         if (!stream.start()) {
-            Log.e(TAG, "USB stream start failed")
+            Timber.tag(TAG).e("USB stream start failed")
             stream.release()
             return
         }
@@ -817,7 +812,7 @@ class UsbAudioSink(
         // onMediaItemTransition handles it (path is correct by then).
         startNativeEngineIfSupported(stream)
 
-        Log.i(TAG, "USB bit-perfect stream ACTIVE: rate=$sampleRate ch=$channelCount " +
+        Timber.tag(TAG).i("USB bit-perfect stream ACTIVE: rate=$sampleRate ch=$channelCount " +
                 "bits=$bitDepth device=${deviceInfo.deviceName}")
     }
 
@@ -851,17 +846,17 @@ class UsbAudioSink(
                     if (isOpusPayload(path)) {
                         startOpusEngine(stream, path)
                     } else {
-                        Log.i(TAG, "Ogg file is not Opus payload, using ExoPlayer: ${File(path).name}")
+                        Timber.tag(TAG).i("Ogg file is not Opus payload, using ExoPlayer: ${File(path).name}")
                     }
                 }
-                else -> Log.i(TAG, "Unsupported format for native engine: ${File(path).name}")
+                else -> Timber.tag(TAG).i("Unsupported format for native engine: ${File(path).name}")
             }
         }
 
         // If no native engine was created, fall back to ExoPlayer streaming thread
         if (nativeEngine == null && nativeOpusEngine == null && usbStreamingThread == null) {
             usbStreamingThread = UsbStreamingThread(stream).also { it.start() }
-            Log.i(TAG, "Using ExoPlayer pipeline (no native engine available)")
+            Timber.tag(TAG).i("Using ExoPlayer pipeline (no native engine available)")
         }
     }
 
@@ -879,7 +874,7 @@ class UsbAudioSink(
                 // when ExoPlayer's queue and onMediaItemTransition disagree about
                 // which track is playing (e.g., cross-album Recently Played lists).
                 if (engine.getSampleRate() != currentSampleRate) {
-                    Log.w(TAG, "Rate mismatch: FLAC=${engine.getSampleRate()} USB=$currentSampleRate" +
+                    Timber.tag(TAG).w("Rate mismatch: FLAC=${engine.getSampleRate()} USB=$currentSampleRate" +
                             " — falling back to ExoPlayer pipeline")
                     engine.stop()
                     engine.destroy()
@@ -893,12 +888,12 @@ class UsbAudioSink(
                     engineEndNotified = false
                     activeEnginePath = path
                     trackBitDepth = engine.getBitsPerSample()
-                    Log.i(TAG, "Native FLAC engine started (paused, awaiting seek) for: ${File(path).name} ${trackBitDepth}-bit")
+                    Timber.tag(TAG).i("Native FLAC engine started (paused, awaiting seek) for: ${File(path).name} ${trackBitDepth}-bit")
                     return
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Native FLAC engine failed: ${e.message}")
+            Timber.tag(TAG).w("Native FLAC engine failed: ${e.message}")
         }
         engine.destroy()
     }
@@ -919,7 +914,7 @@ class UsbAudioSink(
     private fun startOpusEngine(stream: UsbAudioStream, path: String) {
         val probe = NativeOpusEngine()
         if (!probe.isAvailable) {
-            Log.w(TAG, "Native Opus engine unavailable (libopus not built) — " +
+            Timber.tag(TAG).w("Native Opus engine unavailable (libopus not built) — " +
                     "run decent-usb-audio-driver/setup.sh, then rebuild. " +
                     "Falling back to ExoPlayer pipeline.")
             return
@@ -937,7 +932,7 @@ class UsbAudioSink(
                 // internally; if the DAC alt setting is different (e.g., 44.1kHz),
                 // we fall back to ExoPlayer which will resample.
                 if (engine.getSampleRate() != currentSampleRate) {
-                    Log.w(TAG, "Rate mismatch: Opus=${engine.getSampleRate()} USB=$currentSampleRate" +
+                    Timber.tag(TAG).w("Rate mismatch: Opus=${engine.getSampleRate()} USB=$currentSampleRate" +
                             " — falling back to ExoPlayer pipeline")
                     engine.stop()
                     engine.destroy()
@@ -951,12 +946,12 @@ class UsbAudioSink(
                     engineEndNotified = false
                     activeEnginePath = path
                     trackBitDepth = engine.getBitsPerSample()  // always 16 for Opus
-                    Log.i(TAG, "Native Opus engine started (paused, awaiting seek) for: ${File(path).name} ${trackBitDepth}-bit")
+                    Timber.tag(TAG).i("Native Opus engine started (paused, awaiting seek) for: ${File(path).name} ${trackBitDepth}-bit")
                     return
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Native Opus engine failed: ${e.message}")
+            Timber.tag(TAG).w("Native Opus engine failed: ${e.message}")
         }
         engine.destroy()
     }
@@ -985,7 +980,7 @@ class UsbAudioSink(
                 false
             }
         } catch (e: Exception) {
-            Log.w(TAG, "isOpusPayload: failed to sniff $path: ${e.message}")
+            Timber.tag(TAG).w("isOpusPayload: failed to sniff $path: ${e.message}")
             false
         }
     }
@@ -1018,7 +1013,7 @@ class UsbAudioSink(
 
         // Drain ALL in-flight URBs — MUST complete before setAlt(0)
         val drained = stream.drainUrbs()
-        Log.i(TAG, "USB stream drained $drained URBs")
+        Timber.tag(TAG).i("USB stream drained $drained URBs")
 
         // Release native context
         stream.release()
@@ -1026,7 +1021,7 @@ class UsbAudioSink(
         // Keep device connection open between tracks (standard practice)
         clearForcedRouting()
         unmuteDelegateIfNeeded()
-        Log.i(TAG, "USB audio stream released (device kept open)")
+        Timber.tag(TAG).i("USB audio stream released (device kept open)")
     }
 
     // ── Delegate volume management ──────────────────────────────────
@@ -1048,10 +1043,10 @@ class UsbAudioSink(
                 .firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
             if (speaker != null) {
                 delegate.setPreferredDevice(speaker)
-                Log.i(TAG, "Delegate routed to speaker")
+                Timber.tag(TAG).i("Delegate routed to speaker")
             }
         } catch (e: Exception) {
-            Log.w(TAG, "forceMediaToSpeaker failed: ${e.message}")
+            Timber.tag(TAG).w("forceMediaToSpeaker failed: ${e.message}")
         }
     }
 
@@ -1085,7 +1080,7 @@ class UsbAudioSink(
         player.addListener(listener)
         attachedPlayer = player
         integrationListener = listener
-        Log.i(TAG, "attachToPlayer: integration listener registered")
+        Timber.tag(TAG).i("attachToPlayer: integration listener registered")
     }
 
     /** Detach from the current player. Call before player.release(). */
@@ -1112,7 +1107,7 @@ class UsbAudioSink(
             // Capture player position BEFORE engine creation. On restore this is
             // the saved position (e.g., 158s). On fresh start this is 0.
             initialPlayerPositionUs = (attachedPlayer?.currentPosition ?: 0L) * 1000L
-            Log.i(TAG, "onMediaItemTransition: initialPlayerPos=${initialPlayerPositionUs / 1000}ms")
+            Timber.tag(TAG).i("onMediaItemTransition: initialPlayerPos=${initialPlayerPositionUs / 1000}ms")
 
             val uri = mediaItem.localConfiguration?.uri
 
@@ -1122,7 +1117,7 @@ class UsbAudioSink(
             // 2. Resolve file path from URI
             val resolvedPath = resolveTrackPath(uri)
             currentTrackPath = resolvedPath
-            Log.i(TAG, "onMediaItemTransition: uri=$uri path=$resolvedPath")
+            Timber.tag(TAG).i("onMediaItemTransition: uri=$uri path=$resolvedPath")
 
             // 3. Create engine if local FLAC
             if (resolvedPath != null) {
@@ -1150,7 +1145,7 @@ class UsbAudioSink(
             "file" -> uri.path
             "content" -> resolveContentUri(uri)
             "http", "https" -> {
-                Log.i(TAG, "resolveTrackPath: HTTP URI → ExoPlayer pipeline (no native engine)")
+                Timber.tag(TAG).i("resolveTrackPath: HTTP URI → ExoPlayer pipeline (no native engine)")
                 null
             }
             null -> {
@@ -1175,7 +1170,7 @@ class UsbAudioSink(
                 } else null
             }
         } catch (e: Exception) {
-            Log.w(TAG, "resolveContentUri failed: ${e.message}")
+            Timber.tag(TAG).w("resolveContentUri failed: ${e.message}")
             null
         }
     }

@@ -1,6 +1,6 @@
 package com.decent.usbaudio.media3
 
-import android.util.Log
+import timber.log.Timber
 import com.decent.usbaudio.UsbAudioStream
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.TimeUnit
@@ -42,7 +42,7 @@ class UsbStreamingThread(private val usbStream: UsbAudioStream) {
     fun start() {
         running = true
         thread = Thread({
-            Log.i(TAG, "USB streaming thread started")
+            Timber.tag(TAG).i("USB streaming thread started")
             while (running) {
                 if (paused) {
                     Thread.sleep(50)
@@ -52,16 +52,16 @@ class UsbStreamingThread(private val usbStream: UsbAudioStream) {
                 when (val buf = audioQueue.poll(POLL_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
                     is AudioBuffer.FloatBuffer -> {
                         usbStream.write(buf.data)
-                        if (qBefore <= 1) Log.w(TAG, "Queue nearly empty: $qBefore before write")
+                        if (qBefore <= 1) Timber.tag(TAG).w("Queue nearly empty: $qBefore before write")
                     }
                     is AudioBuffer.RawBuffer -> {
                         usbStream.writeRaw(buf.data, buf.encoding)
-                        if (qBefore <= 1) Log.w(TAG, "Queue nearly empty: $qBefore before writeRaw")
+                        if (qBefore <= 1) Timber.tag(TAG).w("Queue nearly empty: $qBefore before writeRaw")
                     }
-                    null -> Log.w(TAG, "Queue EMPTY — poll timeout")
+                    null -> Timber.tag(TAG).w("Queue EMPTY — poll timeout")
                 }
             }
-            Log.i(TAG, "USB streaming thread exited")
+            Timber.tag(TAG).i("USB streaming thread exited")
         }, "UsbStreamingThread").apply {
             priority = Thread.MAX_PRIORITY
             start()
@@ -76,7 +76,7 @@ class UsbStreamingThread(private val usbStream: UsbAudioStream) {
             audioQueue.offer(buf)
             dropCount++
             if (dropCount <= 3 || dropCount % 100 == 0) {
-                Log.w(TAG, "Queue full, dropped buffer #$dropCount")
+                Timber.tag(TAG).w("Queue full, dropped buffer #$dropCount")
             }
         }
     }
@@ -89,7 +89,7 @@ class UsbStreamingThread(private val usbStream: UsbAudioStream) {
             audioQueue.offer(buf)
             dropCount++
             if (dropCount <= 3 || dropCount % 100 == 0) {
-                Log.w(TAG, "Queue full, dropped raw buffer #$dropCount")
+                Timber.tag(TAG).w("Queue full, dropped raw buffer #$dropCount")
             }
         }
     }

@@ -1,6 +1,6 @@
 package com.decent.usbaudio
 
-import android.util.Log
+import timber.log.Timber
 
 /**
  * Native FLAC decode → USB audio engine.
@@ -41,15 +41,15 @@ class NativeAudioEngine : NativeEngine {
      */
     override fun createFromFd(fd: Int, usbHandle: Long): Boolean {
         if (handle != 0L) {
-            Log.w(TAG, "Engine already created, destroying first")
+            Timber.tag(TAG).w("Engine already created, destroying first")
             destroy()
         }
         handle = nativeCreateFromFd(fd, usbHandle)
         if (handle == 0L) {
-            Log.e(TAG, "Failed to create native engine")
+            Timber.tag(TAG).e("Failed to create native engine")
             return false
         }
-        Log.i(TAG, "Created: ${getSampleRate()}Hz ${getBitsPerSample()}-bit ${getChannels()}ch")
+        Timber.tag(TAG).i("Created: ${getSampleRate()}Hz ${getBitsPerSample()}-bit ${getChannels()}ch")
         return true
     }
 
