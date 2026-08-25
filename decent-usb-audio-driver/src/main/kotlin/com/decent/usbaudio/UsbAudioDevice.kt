@@ -421,10 +421,23 @@ class UsbAudioDevice private constructor(private val context: Context) {
             if (inAudioControl && bDescriptorType == 0x24 && bLength >= 4) {
                 val bDescriptorSubtype = raw[i + 2].toInt() and 0xFF
                 // FEATURE_UNIT = 0x06
-                if (bDescriptorSubtype == 0x06 && bLength >= 5) {
+                if (bDescriptorSubtype == 0x06 && bLength >= 7) {
                     val bUnitID = raw[i + 3].toInt() and 0xFF
+                    val bSourceID = raw[i + 4].toInt() and 0xFF
+                    val bControlSize = raw[i + 5].toInt() and 0xFF
+                    // Parse bmControls bitmap — tells us which controls the DAC actually supports.
+                    // Bit 0 (0x01): MUTE, Bit 1 (0x02): VOLUME, Bit 2 (0x04): BASS, etc.
+                    val bmControls = if (bControlSize >= 1 && i + 6 < raw.size) raw[i + 6].toInt() and 0xFF else 0
+                    val supportsMute = (bmControls and 0x01) != 0
+                    val supportsVolume = (bmControls and 0x02) != 0
                     Timber.tag(TAG).i("parseFeatureUnitId: found FEATURE_UNIT bUnitID=0x${bUnitID.toString(16)} " +
-                            "in AudioControl iface=$audioControlIfaceNum")
+                            "in AudioControl iface=$audioControlIfaceNum, bSourceID=0x${bSourceID.toString(16)}, " +
+                            "bControlSize=$bControlSize, bmControls=0x${bmControls.toString(16)} " +
+                            "(MUTE=$supportsMute, VOLUME=$supportsVolume)")
+                    if (!supportsVolume) {
+                        Timber.tag(TAG).w("parseFeatureUnitId: DAC does NOT advertise VOLUME control in bmControls!" +
+                                " SET_CUR on CS=0x01 will be silently ignored by DAC firmware.")
+                    }
                     return Pair(bUnitID, audioControlIfaceNum)
                 }
             }
